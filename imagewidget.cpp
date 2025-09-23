@@ -37,8 +37,6 @@ ImageWidget::ImageWidget(QWidget *parent) : QWidget(parent),
     panOffset(0, 0),
     currentViewStateType(FitToWindow),
     mouseInImage(false),
-    mouseInLeftQuarter(false),
-    mouseInRightQuarter(false),
     showNavigationHints(true) // 默认显示导航提示
 {
 
@@ -530,31 +528,26 @@ void ImageWidget::paintEvent(QPaintEvent *event)
 
         painter.drawPixmap(offset, scaledPixmap);
 
-        // 只在鼠标在图片区域内且允许显示导航提示时显示箭头
-        if (scaledSize.width() > 200 && scaledSize.height() > 200 &&
-            mouseInImage && showNavigationHints) {
+        // 添加左右箭头提示（半透明，只在图片较大时显示）
+        if (scaledSize.width() > 200 && scaledSize.height() > 200) {
             painter.setRenderHint(QPainter::Antialiasing);
             painter.setOpacity(0.5); // 半透明
 
-            int centerY = offset.y() + scaledSize.height() / 2;
+            // 左箭头
+            QPainterPath leftArrow;
+            leftArrow.moveTo(offset.x() + 20, offset.y() + scaledSize.height() / 2);
+            leftArrow.lineTo(offset.x() + 40, offset.y() + scaledSize.height() / 2 - 15);
+            leftArrow.lineTo(offset.x() + 40, offset.y() + scaledSize.height() / 2 + 15);
+            leftArrow.closeSubpath();
+            painter.fillPath(leftArrow, Qt::white);
 
-            // 左箭头（放在左四分之一区域的中心）
-            int leftQuarterX = offset.x() + scaledSize.width() / 8;
-            QPolygonF leftArrow;
-            leftArrow << QPointF(leftQuarterX, centerY)
-                      << QPointF(leftQuarterX + 20, centerY - 15)
-                      << QPointF(leftQuarterX + 20, centerY + 15);
-            painter.setBrush(Qt::white);
-            painter.setPen(Qt::NoPen);
-            painter.drawPolygon(leftArrow);
-
-            // 右箭头（放在右四分之一区域的中心）
-            int rightQuarterX = offset.x() + scaledSize.width() * 7 / 8;
-            QPolygonF rightArrow;
-            rightArrow << QPointF(rightQuarterX, centerY)
-                       << QPointF(rightQuarterX - 20, centerY - 15)
-                       << QPointF(rightQuarterX - 20, centerY + 15);
-            painter.drawPolygon(rightArrow);
+            // 右箭头
+            QPainterPath rightArrow;
+            rightArrow.moveTo(offset.x() + scaledSize.width() - 20, offset.y() + scaledSize.height() / 2);
+            rightArrow.lineTo(offset.x() + scaledSize.width() - 40, offset.y() + scaledSize.height() / 2 - 15);
+            rightArrow.lineTo(offset.x() + scaledSize.width() - 40, offset.y() + scaledSize.height() / 2 + 15);
+            rightArrow.closeSubpath();
+            painter.fillPath(rightArrow, Qt::white);
 
             painter.setOpacity(1.0); // 恢复不透明
         }
@@ -710,8 +703,8 @@ void ImageWidget::showContextMenu(const QPoint &globalPos)
         contextMenu.addSeparator();
 
         // 添加切换提示
-        contextMenu.addAction("上一张 (点击图片左1/4)", this, &ImageWidget::loadPreviousImage);
-        contextMenu.addAction("下一张 (点击图片右1/4)", this, &ImageWidget::loadNextImage);
+        contextMenu.addAction("上一张 (点击图片左侧)", this, &ImageWidget::loadPreviousImage);
+        contextMenu.addAction("下一张 (点击图片右侧)", this, &ImageWidget::loadNextImage);
         contextMenu.addSeparator();
 
         // 添加合适大小和实际大小的菜单项
@@ -828,49 +821,15 @@ void ImageWidget::mousePressEvent(QMouseEvent *event)
     }
 }
 
-// imagewidget.cpp
 void ImageWidget::mouseMoveEvent(QMouseEvent *event)
 {
-    // 重置区域状态
-    mouseInImage = false;
-    mouseInLeftQuarter = false;
-    mouseInRightQuarter = false;
-
-    // 更新鼠标是否在图片区域内的状态
-    if (currentViewMode == SingleView && !pixmap.isNull()) {
-        QSize scaledSize = pixmap.size() * scaleFactor;
-        QPointF offset((width() - scaledSize.width()) / 2 + panOffset.x(),
-                       (height() - scaledSize.height()) / 2 + panOffset.y());
-        QRectF imageRect(offset, scaledSize);
-
-        if (imageRect.contains(event->pos())) {
-            mouseInImage = true;
-
-            // 计算鼠标在图片内的相对位置
-            QPointF relativePos = event->pos() - offset;
-
-            // 检查是否在左四分之一区域
-            if (relativePos.x() < scaledSize.width() / 4) {
-                mouseInLeftQuarter = true;
-            }
-            // 检查是否在右四分之一区域
-            else if (relativePos.x() > scaledSize.width() * 3 / 4) {
-                mouseInRightQuarter = true;
-            }
-        }
-    }
-
-    // 标记为鼠标操作，显示导航提示
-    showNavigationHints = true;
-
-    // 触发重绘以更新导航提示
-    update();
-
-    // 原有的拖拽处理
     if (isDraggingWindow && (event->buttons() & Qt::MiddleButton)) {
         QPoint newPosition = event->globalPos() - dragStartPosition;
         move(newPosition);
     } else if (isPanningImage && (event->buttons() & Qt::LeftButton)) {
+        // 标记为手动调整
+        currentViewStateType = ManualAdjustment;
+
         QPointF delta = event->pos() - panStartPosition;
         panOffset += delta;
         panStartPosition = event->pos();
@@ -920,6 +879,7 @@ void ImageWidget::mouseDoubleClickEvent(QMouseEvent *event)
         }
     }
 }
+
 // imagewidget.cpp
 void ImageWidget::wheelEvent(QWheelEvent *event)
 {
@@ -949,11 +909,6 @@ void ImageWidget::wheelEvent(QWheelEvent *event)
 void ImageWidget::keyPressEvent(QKeyEvent *event)
 {
     if (currentViewMode == SingleView) {
-
-        // 标记为键盘操作，不显示导航提示
-        showNavigationHints = false;
-        update(); // 触发重绘，隐藏导航提示
-
         switch (event->key()) {
         case Qt::Key_Left:
             loadPreviousImage();
@@ -993,7 +948,6 @@ void ImageWidget::keyPressEvent(QKeyEvent *event)
         case Qt::Key_Enter:
         case Qt::Key_Return:
             switchToThumbnailView();
-            break;
 
         default:
             QWidget::keyPressEvent(event);
