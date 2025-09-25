@@ -21,6 +21,7 @@
 #include <QDateTime>
 #include <windows.h>
 #include <QPainterPath>
+#include <QScrollBar>
 
 
 // imagewidget.cpp
@@ -55,6 +56,10 @@ ImageWidget::ImageWidget(QWidget *parent) : QWidget(parent),
     // 创建缩略图部件
     thumbnailWidget = new ThumbnailWidget(this);
     scrollArea->setWidget(thumbnailWidget);
+
+    // // 设置滚动条不接收焦点
+    // scrollArea->horizontalScrollBar()->setFocusPolicy(Qt::NoFocus);
+    // scrollArea->verticalScrollBar()->setFocusPolicy(Qt::NoFocus);
 
     // 连接信号
     // 修改信号连接 - 确保双击能打开图片
@@ -499,8 +504,28 @@ void ImageWidget::openFolder()
         currentViewMode = ThumbnailView;
         currentImageIndex = -1;
         scrollArea->show();
+
+        if (!imageList.isEmpty()) {
+            currentImageIndex = 0;
+            thumbnailWidget->setSelectedIndex(0);
+            qDebug() << "设置选中索引为 0，图片列表大小:" << imageList.size();
+        } else {
+            currentImageIndex = -1;
+            qDebug() << "图片列表为空，选中索引保持为 -1";
+        }
+
+        // 确保窗口激活
+        this->activateWindow();
+        this->raise();
+
+        // 设置焦点到缩略图部件
+        thumbnailWidget->setFocus();
+        thumbnailWidget->activateWindow();
+
         update();
     }
+
+    testKeyboard();
 }
 
 
@@ -948,7 +973,10 @@ void ImageWidget::keyPressEvent(QKeyEvent *event)
         case Qt::Key_Enter:
         case Qt::Key_Return:
             switchToThumbnailView();
-
+            break;
+        case Qt::Key_Menu: //菜单键
+            showContextMenu(this->mapToGlobal(QPoint(width()/2, height()/2)));
+            break;
         default:
             QWidget::keyPressEvent(event);
         }
@@ -967,6 +995,11 @@ void ImageWidget::keyPressEvent(QKeyEvent *event)
         case Qt::Key_Down:
             navigateThumbnails(event->key());
             break;
+
+        case Qt::Key_Menu: // 缩略图模式下的菜单键
+            showContextMenu(this->mapToGlobal(QPoint(width()/2, height()/2)));
+            break;
+
         case Qt::Key_Escape:
             close();
             break;
@@ -1042,4 +1075,14 @@ void ImageWidget::resizeEvent(QResizeEvent *event)
     }
 }
 
-
+// imagewidget.cpp
+void ImageWidget::testKeyboard()
+{
+    qDebug() <<"=== 键盘测试开始 ===";
+    qDebug() << "当前焦点部件:" << (QApplication::focusWidget() ? QApplication::focusWidget()->objectName() : "无");
+    qDebug() << "缩略图部件焦点状态:" << thumbnailWidget->hasFocus();
+    qDebug() << "当前模式:" << (currentViewMode == SingleView ? "单张" : "缩略图");
+    qDebug() << "图片列表大小:" << imageList.size();
+    qDebug() << "当前选中索引:" << currentImageIndex;
+    qDebug() <<"=== 键盘测试结束 ===";
+}

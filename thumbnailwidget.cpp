@@ -290,6 +290,8 @@ void ThumbnailWidget::keyPressEvent(QKeyEvent *event)
         return;
     }
 
+    qDebug() << "缩略图key键: " << event->key();
+
     switch (event->key()) {
     case Qt::Key_Left:
     case Qt::Key_Right:

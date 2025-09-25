@@ -127,7 +127,11 @@ private:
     // imagewidget.h
 private:
     bool mouseInImage; // 跟踪鼠标是否在图片区域内
+    bool mouseInLeftQuarter; // 跟踪鼠标是否在左四分之一区域
+    bool mouseInRightQuarter; // 跟踪鼠标是否在右四分之一区域
     bool showNavigationHints; // 控制是否显示导航提示
+
+    void testKeyboard();
 };
 
 #endif // IMAGEWIDGET_H
