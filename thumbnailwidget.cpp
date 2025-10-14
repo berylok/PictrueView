@@ -5,6 +5,7 @@
 #include <QApplication>
 #include <QFutureWatcher>
 #include <QtConcurrent>
+#include <imagewidget.h>
 
 // 初始化静态成员变量
 QMap<QString, QPixmap> ThumbnailWidget::thumbnailCache;
@@ -12,8 +13,8 @@ QMutex ThumbnailWidget::cacheMutex;
 
 ThumbnailWidget::ThumbnailWidget(QWidget *parent)
     : QWidget(parent),
-    thumbnailSize(150, 150),
-    thumbnailSpacing(10),
+    thumbnailSize(250, 250),
+    thumbnailSpacing(7),
     selectedIndex(-1),
     loadedCount(0),
     totalCount(0),
@@ -21,7 +22,7 @@ ThumbnailWidget::ThumbnailWidget(QWidget *parent)
     isLoading(false)
 {
     setMouseTracking(true);
-    setFocusPolicy(Qt::StrongFocus);
+    setFocusPolicy(Qt::StrongFocus); // 确保能够接收键盘事件
 }
 
 ThumbnailWidget::~ThumbnailWidget()
@@ -129,11 +130,16 @@ void ThumbnailWidget::clearThumbnailCache()
     thumbnailCache.clear();
 }
 
+//确保设置选中索引时自动滚动到可见区域：
 void ThumbnailWidget::setSelectedIndex(int index)
 {
-    selectedIndex = index;
-    update();
-    ensureVisible(index);
+    if (index >= -1 && index < imageList.size() && index != selectedIndex) {
+        selectedIndex = index;
+        update(); // 确保这里调用了 update() 来触发重绘
+        ensureVisible(index);// 确保选中的缩略图可见
+
+        qDebug() << "ThumbnailWidget 选中索引:" << index;
+    }
 }
 
 int ThumbnailWidget::getSelectedIndex() const
@@ -141,27 +147,23 @@ int ThumbnailWidget::getSelectedIndex() const
     return selectedIndex;
 }
 
+//确保这个方法能正确计算缩略图位置并发出信号：
 void ThumbnailWidget::ensureVisible(int index)
 {
     if (index < 0 || index >= imageList.size()) return;
 
-    int x = thumbnailSpacing;
-    int y = thumbnailSpacing;
     int maxWidth = width();
+    int itemsPerRow = qMax(1, (maxWidth - thumbnailSpacing) / (thumbnailSize.width() + thumbnailSpacing));
 
-    for (int i = 0; i <= index; ++i) {
-        if (i == index) {
-            QRect visibleRect(x, y, thumbnailSize.width(), thumbnailSize.height() + 25);
-            emit ensureRectVisible(visibleRect);
-            break;
-        }
+    int row = index / itemsPerRow;
+    int col = index % itemsPerRow;
 
-        x += thumbnailSize.width() + thumbnailSpacing;
-        if (x + thumbnailSize.width() > maxWidth) {
-            x = thumbnailSpacing;
-            y += thumbnailSize.height() + thumbnailSpacing + 25;
-        }
-    }
+    int x = thumbnailSpacing + col * (thumbnailSize.width() + thumbnailSpacing);
+    int y = thumbnailSpacing + row * (thumbnailSize.height() + thumbnailSpacing + 25);
+
+    // 创建一个稍大的矩形区域，确保缩略图完全可见
+    QRect visibleRect(x, y, thumbnailSize.width(), thumbnailSize.height() + 25);
+    emit ensureRectVisible(visibleRect);
 }
 
 void ThumbnailWidget::paintEvent(QPaintEvent *event)
@@ -169,60 +171,78 @@ void ThumbnailWidget::paintEvent(QPaintEvent *event)
     Q_UNUSED(event);
     QPainter painter(this);
 
-    painter.fillRect(rect(), QColor(240, 240, 240));
+    painter.fillRect(rect(), Qt::black);
 
     if (imageList.isEmpty()) {
-        painter.drawText(rect(), Qt::AlignCenter, "没有图片文件\n拖拽图片文件夹到此窗口或右键选择打开文件夹");
+        painter.setPen(Qt::white);
+        painter.drawText(rect(), Qt::AlignCenter,tr("欢迎使用图片查看器！\n\n"
+                                                  "使用方法：\n"
+                                                  "• 按 Ctrl+O 打开文件夹浏览图片\n"
+                                                  "• 按 Ctrl+Shift+O 打开单张图片\n"
+                                                  "• 按 F1 查看详细使用说明\n\n"
+                                                  "祝您使用愉快！"
+                                                  "\n"
+                                                  "\n"
+                         "没有图片文件\n拖拽图片文件夹到此窗口或右键选择打开文件夹"
+                                                  "\n"
+                                                  "\n"
+                         "F1 查看帮助 或右键弹出菜单使用"));
         return;
     }
 
     int x = thumbnailSpacing;
     int y = thumbnailSpacing;
     int maxWidth = width();
+    int itemsPerRow = qMax(1, (maxWidth - thumbnailSpacing) / (thumbnailSize.width() + thumbnailSpacing));
 
     QMutexLocker locker(&cacheMutex);
 
     for (int i = 0; i < imageList.size(); ++i) {
         QString imagePath = currentDir.absoluteFilePath(imageList.at(i));
 
+        // 计算当前缩略图的位置
+        int row = i / itemsPerRow;
+        int col = i % itemsPerRow;
+        int currentX = thumbnailSpacing + col * (thumbnailSize.width() + thumbnailSpacing);
+        int currentY = thumbnailSpacing + row * (thumbnailSize.height() + thumbnailSpacing + 25);
+
         if (thumbnailCache.contains(imagePath)) {
             QPixmap thumbnail = thumbnailCache.value(imagePath);
 
-            int thumbX = x + (thumbnailSize.width() - thumbnail.width()) / 2;
-            int thumbY = y + (thumbnailSize.height() - thumbnail.height()) / 2;
+            int thumbX = currentX + (thumbnailSize.width() - thumbnail.width()) / 2;
+            int thumbY = currentY + (thumbnailSize.height() - thumbnail.height()) / 2;
 
             QRect thumbRect(thumbX, thumbY, thumbnail.width(), thumbnail.height());
-            QRect borderRect(x, y, thumbnailSize.width(), thumbnailSize.height());
+            QRect borderRect(currentX, currentY, thumbnailSize.width(), thumbnailSize.height());
 
             if (i == selectedIndex) {
+                // 绘制选中状态
                 painter.fillRect(borderRect.adjusted(-2, -2, 2, 2), QColor(0, 120, 215));
             }
 
             painter.drawPixmap(thumbRect, thumbnail);
 
-            QRect textRect(x, y + thumbnailSize.height(), thumbnailSize.width(), 20);
+            QRect textRect(currentX, currentY + thumbnailSize.height(), thumbnailSize.width(), 20);
             QString fileName = QFileInfo(imageList.at(i)).fileName();
-            painter.setPen(Qt::black);
+            painter.setPen(Qt::white);
             painter.drawText(textRect, Qt::AlignCenter | Qt::TextElideMode::ElideRight, fileName);
         } else {
-            QRect borderRect(x, y, thumbnailSize.width(), thumbnailSize.height());
-            painter.fillRect(borderRect, QColor(200, 200, 200));
+            QRect borderRect(currentX, currentY, thumbnailSize.width(), thumbnailSize.height());
+            painter.fillRect(borderRect, QColor(50, 50, 50));
+            painter.setPen(Qt::white);
             painter.drawText(borderRect, Qt::AlignCenter, "加载中...");
-        }
-
-        x += thumbnailSize.width() + thumbnailSpacing;
-        if (x + thumbnailSize.width() > maxWidth) {
-            x = thumbnailSpacing;
-            y += thumbnailSize.height() + thumbnailSpacing + 25;
         }
     }
 
     if (isLoading) {
-        painter.setPen(Qt::blue);
+        painter.setPen(Qt::white);
         painter.drawText(10, 20, QString("加载中: %1/%2").arg(loadedCount).arg(totalCount));
     }
 
-    setMinimumHeight(y + thumbnailSize.height() + thumbnailSpacing + 25);
+    // 计算最小高度
+    int rows = (imageList.size() + itemsPerRow - 1) / itemsPerRow;
+    int minHeight = thumbnailSpacing + rows * (thumbnailSize.height() + thumbnailSpacing + 25);
+    setMinimumHeight(minHeight);
 }
 
 void ThumbnailWidget::mousePressEvent(QMouseEvent *event)
@@ -285,27 +305,71 @@ void ThumbnailWidget::selectThumbnailAtPosition(const QPoint &pos)
 
 void ThumbnailWidget::keyPressEvent(QKeyEvent *event)
 {
+    qDebug() << "ThumbnailWidget 接收到按键:" << event->key();
+
     if (imageList.isEmpty()) {
         QWidget::keyPressEvent(event);
         return;
     }
 
-    qDebug() << "缩略图key键: " << event->key();
-
     switch (event->key()) {
     case Qt::Key_Left:
     case Qt::Key_Right:
+        // 左右方向键：在缩略图部件中直接处理选中切换
+        {
+            int newIndex = selectedIndex;
+            if (newIndex < 0) newIndex = 0; // 如果没有选中，从第一个开始
+
+            if (event->key() == Qt::Key_Left) {
+                newIndex = (newIndex - 1 + imageList.size()) % imageList.size();
+            } else {
+                newIndex = (newIndex + 1) % imageList.size();
+            }
+
+            if (newIndex != selectedIndex) {
+                selectedIndex = newIndex;
+                update(); // 重绘以显示新的选中状态
+                ensureVisible(selectedIndex); // 确保选中的缩略图可见
+
+                // 通知父窗口当前选中项已更改
+                QMetaObject::invokeMethod(parentWidget(), "onThumbnailSelectionChanged",
+                                          Qt::QueuedConnection,
+                                          Q_ARG(int, selectedIndex));
+            }
+            event->accept();
+        }
+        break;
     case Qt::Key_Up:
     case Qt::Key_Down:
+        // 上下方向键：转发给父窗口处理滚动
+        QApplication::sendEvent(parentWidget(), event);
+        event->accept();
+        break;
+    case Qt::Key_PageUp:
+    case Qt::Key_PageDown:
+    case Qt::Key_Home:
+    case Qt::Key_End:
+        // 将导航键转发给父窗口处理
         QApplication::sendEvent(parentWidget(), event);
         break;
+
     case Qt::Key_Enter:
     case Qt::Key_Return:
+        qDebug() << "处理回车键，选中索引:" << selectedIndex;
         if (selectedIndex >= 0) {
             emit thumbnailClicked(selectedIndex);
         }
+        event->accept();
         break;
+
     default:
         QWidget::keyPressEvent(event);
     }
 }
+
+void ThumbnailWidget::clearThumbnailCacheForImage(const QString &imagePath)
+{
+    QMutexLocker locker(&cacheMutex);
+    thumbnailCache.remove(imagePath);
+}
+

@@ -44,7 +44,7 @@ private slots:
 
 private:
     void selectThumbnailAtPosition(const QPoint &pos);
-    void ensureVisible(int index);
+
     QPixmap loadThumbnail(const QString &path);
 
     QSize thumbnailSize;
@@ -60,6 +60,10 @@ private:
     int totalCount;
     QFutureWatcher<QPixmap> *futureWatcher;
     bool isLoading;
+
+public:
+    static void clearThumbnailCacheForImage(const QString &imagePath);
+    void ensureVisible(int index);
 };
 
 #endif // THUMBNAILWIDGET_H

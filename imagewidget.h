@@ -12,6 +12,9 @@
 #include <QtConcurrent>
 #include <QMutex>
 
+#include "ConfigManager.h"  // 添加配置管理器头文件
+#include "canvascontrolpanel.h"  // 添加控制面板头文件
+
 class ImageWidget : public QWidget
 {
     Q_OBJECT
@@ -62,6 +65,8 @@ protected:
     void mouseDoubleClickEvent(QMouseEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
 
+    void closeEvent(QCloseEvent *event) override;  // 添加关闭事件处理
+
 private slots:
     void onThumbnailClicked(int index);
     void onEnsureRectVisible(const QRect &rect);
@@ -102,19 +107,25 @@ private:
     ThumbnailWidget *thumbnailWidget;
     QDir currentDir;
 
+    // ini配置管理相关
+    void loadConfiguration();  // 加载配置
+    void saveConfiguration();  // 保存配置
+    void applyConfiguration(const ConfigManager::Config &config);  // 应用配置
+    // 添加当前配置对象
+    ConfigManager::Config currentConfig;
+    // 配置管理器
+    ConfigManager *configManager;
+
+    //多线程互斥体
 private:
     QMutex cacheMutex; // 用于保护 imageCache 的访问
 
-    // imagewidget.h
+    //
 public:
     void setCurrentDir(const QDir &dir);
-
-    // imagewidget.h
 public:
     void fitToWindow();
     void actualSize();
-
-    // imagewidget.h
 private:
     enum ViewStateType {
         ManualAdjustment,  // 手动调整
@@ -124,14 +135,109 @@ private:
 
     ViewStateType currentViewStateType;
 
-    // imagewidget.h
+    // 箭头指示相关
 private:
-    bool mouseInImage; // 跟踪鼠标是否在图片区域内
     bool mouseInLeftQuarter; // 跟踪鼠标是否在左四分之一区域
     bool mouseInRightQuarter; // 跟踪鼠标是否在右四分之一区域
-    bool showNavigationHints; // 控制是否显示导航提示
 
+    // 导航提示相关
+    bool mouseInImage;
+    bool showNavigationHints;
+    QTimer *hideHintsTimer;  // 隐藏提示的定时器
+
+    // 鼠标位置跟踪
+    QPoint lastMousePos;
+
+    // 新增方法
+    void updateNavigationHintsVisibility(const QPoint& mousePos);
+    bool isMouseInImageArea(const QPoint& mousePos) const;
+    void startHideHintsTimer();
+    void stopHideHintsTimer();
+
+    //键盘按下测试相关
     void testKeyboard();
+
+public slots:
+    //图片删除相关
+    void deleteCurrentImage();
+    void deleteSelectedThumbnail();
+    void permanentlyDeleteCurrentImage();
+    void permanentlyDeleteSelectedThumbnail(); // 需要实现这个方法的缩略图版本
+private:
+    bool moveFileToRecycleBin(const QString &filePath);
+
+
+private:
+    //窗口状态相关
+    bool isAlwaysOnTop() const;
+    bool hasTitleBar() const;
+    bool hasTransparentBackground() const;
+
+    //弹出菜单相关
+    QAction *toggleTitleBarAction;
+    QAction *toggleAlwaysOnTopAction;
+    QAction *toggleTransparentBackgroundAction;
+
+
+
+
+
+    void drawNavigationArrows(QPainter &painter, const QPointF &offset, const QSize &scaledSize);
+    bool shouldShowNavigationArrows(const QSize &scaledSize);
+
+
+    // 窗口透明度控制
+    double m_windowOpacity;
+    void setWindowOpacityValue(double opacity);
+
+    // 画布模式
+    bool canvasMode;
+
+    // 鼠标穿透相关
+    bool mousePassthrough;
+
+    // 画布模式控制方法
+    void toggleCanvasMode();
+    void enableCanvasMode();
+    void disableCanvasMode();
+    bool isCanvasModeEnabled();
+
+    // 鼠标穿透控制
+    void enableMousePassthrough();
+    void disableMousePassthrough();
+    void ensureWindowVisible();
+    void ensureFocus();
+
+
+    // 画布控制面板
+    CanvasControlPanel *controlPanel;
+
+    // 控制面板方法
+    void createControlPanel();
+    void destroyControlPanel();
+    void positionControlPanel();
+
+    QIcon createMultiResolutionIcon();
+    void createFallbackIcon();
+private slots:
+    // 控制面板信号槽
+    void onExitCanvasMode();
+    void showShortcutHelp();  // 新增：显示快捷键帮助
+
+
+private:
+    void createShortcutActions(); // 创建快捷键动作
+
+    // 快捷键动作
+    QAction *openFolderAction;
+    QAction *openImageAction;
+    QAction *saveImageAction;    // 新增：保存图片
+    QAction *copyImageAction;    // 新增：拷贝图片
+    QAction *pasteImageAction;   // 新增：粘贴图片
+
+    // 关于窗口相关
+    void showAboutDialog();  // 新增：显示关于对话框
+    QAction *aboutAction;    // 新增：关于动作
 };
 
 #endif // IMAGEWIDGET_H
