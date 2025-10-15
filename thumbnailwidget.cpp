@@ -5,6 +5,8 @@
 #include <QApplication>
 #include <QFutureWatcher>
 #include <QtConcurrent>
+#include <QThreadPool>
+#include <QTimer>
 #include <imagewidget.h>
 
 // 初始化静态成员变量
@@ -22,7 +24,7 @@ ThumbnailWidget::ThumbnailWidget(QWidget *parent)
     isLoading(false)
 {
     setMouseTracking(true);
-    setFocusPolicy(Qt::StrongFocus); // 确保能够接收键盘事件
+    setFocusPolicy(Qt::StrongFocus);
 }
 
 ThumbnailWidget::~ThumbnailWidget()
@@ -30,6 +32,7 @@ ThumbnailWidget::~ThumbnailWidget()
     stopLoading();
 }
 
+// 优化的 setImageList 方法
 void ThumbnailWidget::setImageList(const QStringList &list, const QDir &dir)
 {
     // 停止之前的加载
@@ -40,10 +43,16 @@ void ThumbnailWidget::setImageList(const QStringList &list, const QDir &dir)
     selectedIndex = -1;
     loadedCount = 0;
     totalCount = list.size();
+    preloadQueue.clear();
 
+    // 立即更新界面显示占位符
     update();
 
     emit loadingProgress(0, totalCount);
+
+    if (imageList.isEmpty()) {
+        return;
+    }
 
     // 检查哪些图片已经在缓存中
     QStringList pathsToLoad;
@@ -59,24 +68,46 @@ void ThumbnailWidget::setImageList(const QStringList &list, const QDir &dir)
         }
     }
 
-    // 如果有需要加载的图片
+    // 如果有需要加载的图片，分批加载
     if (!pathsToLoad.isEmpty()) {
         isLoading = true;
 
-        // 使用 QtConcurrent 异步加载缩略图
-        QFuture<QPixmap> future = QtConcurrent::mapped(pathsToLoad, [this](const QString &path) {
-            return loadThumbnail(path);
-        });
+        // 第一批立即加载可见区域的图片（前15张）
+        int immediateLoadCount = qMin(15, pathsToLoad.size());
+        for (int i = 0; i < immediateLoadCount; ++i) {
+            QtConcurrent::run([this, path = pathsToLoad[i]]() {
+                QPixmap thumbnail = loadThumbnail(path);
+                QMetaObject::invokeMethod(this, "onThumbnailLoaded",
+                                          Qt::QueuedConnection,
+                                          Q_ARG(QString, path),
+                                          Q_ARG(QPixmap, thumbnail));
+            });
+        }
 
-        // 创建监视器来跟踪进度
-        futureWatcher = new QFutureWatcher<QPixmap>(this);
-        connect(futureWatcher, &QFutureWatcher<QPixmap>::resultReadyAt, this, &ThumbnailWidget::updateThumbnails);
-        connect(futureWatcher, &QFutureWatcher<QPixmap>::finished, this, [this]() {
-            isLoading = false;
-            update();
-        });
+        // 剩余的图片延迟加载 - 使用lambda替代单独的方法
+        if (pathsToLoad.size() > immediateLoadCount) {
+            QStringList remainingPaths = pathsToLoad.mid(immediateLoadCount);
+            QTimer::singleShot(100, this, [this, remainingPaths]() {
+                // 分批加载剩余图片，每批5张
+                const int BATCH_SIZE = 5;
+                for (int i = 0; i < remainingPaths.size(); i += BATCH_SIZE) {
+                    QStringList batch = remainingPaths.mid(i, qMin(BATCH_SIZE, remainingPaths.size() - i));
 
-        futureWatcher->setFuture(future);
+                    // 添加延迟，避免同时启动太多线程
+                    QTimer::singleShot(i * 50, this, [this, batch]() {
+                        for (const QString &path : batch) {
+                            QtConcurrent::run([this, path]() {
+                                QPixmap thumbnail = loadThumbnail(path);
+                                QMetaObject::invokeMethod(this, "onThumbnailLoaded",
+                                                          Qt::QueuedConnection,
+                                                          Q_ARG(QString, path),
+                                                          Q_ARG(QPixmap, thumbnail));
+                            });
+                        }
+                    });
+                }
+            });
+        }
     } else {
         // 所有图片都在缓存中，直接更新界面
         emit loadingProgress(loadedCount, totalCount);
@@ -84,21 +115,178 @@ void ThumbnailWidget::setImageList(const QStringList &list, const QDir &dir)
     }
 }
 
+// 修复的缩略图加载完成处理
+void ThumbnailWidget::onThumbnailLoaded(const QString &path, const QPixmap &thumbnail)
+{
+    QMutexLocker locker(&cacheMutex);
+
+    // 再次检查是否已经存在，避免重复添加
+    if (!thumbnailCache.contains(path)) {
+        thumbnailCache.insert(path, thumbnail);
+        loadedCount++;
+
+        // 只在缓存过大时清理，避免频繁清理
+        if (thumbnailCache.size() > THUMBNAIL_CACHE_MAX_SIZE * 1.5) {
+            cleanupThumbnailCache();
+        }
+
+        // 更新进度
+        emit loadingProgress(loadedCount, totalCount);
+
+        // 每加载5张或全部加载完成时更新界面
+        if (loadedCount % 5 == 0 || loadedCount == totalCount) {
+            update();
+        }
+    }
+
+    // 如果全部加载完成，更新状态
+    if (loadedCount >= totalCount) {
+        isLoading = false;
+        emit loadingProgress(loadedCount, totalCount);
+        update();
+    }
+}
+
+// 修复的缓存清理 - 更保守的策略
+void ThumbnailWidget::cleanupThumbnailCache()
+{
+    // 只在缓存过大时清理
+    if (thumbnailCache.size() > THUMBNAIL_CACHE_MAX_SIZE) {
+        // 计算需要移除的数量
+        int removeCount = thumbnailCache.size() - THUMBNAIL_CACHE_MAX_SIZE;
+
+        // 只移除不在当前列表中的图片
+        QList<QString> keysToRemove;
+        for (auto it = thumbnailCache.begin(); it != thumbnailCache.end() && removeCount > 0; ++it) {
+            QString key = it.key();
+            // 检查这个图片是否在当前显示的列表中
+            bool inCurrentList = false;
+            for (const QString &fileName : imageList) {
+                QString imagePath = currentDir.absoluteFilePath(fileName);
+                if (imagePath == key) {
+                    inCurrentList = true;
+                    break;
+                }
+            }
+
+            // 如果不在当前列表中，可以移除
+            if (!inCurrentList) {
+                keysToRemove.append(key);
+                removeCount--;
+            }
+        }
+
+        // 移除选定的键
+        for (const QString &key : keysToRemove) {
+            thumbnailCache.remove(key);
+        }
+
+        qDebug() << "清理缩略图缓存，移除了" << keysToRemove.size() << "个项";
+    }
+}
+
+// 智能预加载
+void ThumbnailWidget::schedulePreload(int centerIndex)
+{
+    if (imageList.isEmpty() || isLoading) return;
+
+    // 清空预加载队列
+    preloadQueue.clear();
+
+    // 预加载当前选中项周围的图片
+    const int PRELOAD_RANGE = 12; // 增加预加载范围
+    int start = qMax(0, centerIndex - PRELOAD_RANGE);
+    int end = qMin(imageList.size() - 1, centerIndex + PRELOAD_RANGE);
+
+    // 优先加载靠近中心点的图片
+    QList<QString> prioritizedPaths;
+    for (int i = centerIndex; i <= end && i <= centerIndex + 3; ++i) {
+        QString imagePath = currentDir.absoluteFilePath(imageList.at(i));
+        if (!thumbnailCache.contains(imagePath) && !preloadQueue.contains(imagePath)) {
+            prioritizedPaths.append(imagePath);
+        }
+    }
+    for (int i = centerIndex - 1; i >= start && i >= centerIndex - 3; --i) {
+        QString imagePath = currentDir.absoluteFilePath(imageList.at(i));
+        if (!thumbnailCache.contains(imagePath) && !preloadQueue.contains(imagePath)) {
+            prioritizedPaths.append(imagePath);
+        }
+    }
+
+    // 添加其他需要预加载的图片
+    for (int i = start; i <= end; ++i) {
+        if (qAbs(i - centerIndex) > 3) { // 已经处理过中心附近的图片
+            QString imagePath = currentDir.absoluteFilePath(imageList.at(i));
+            if (!thumbnailCache.contains(imagePath) && !preloadQueue.contains(imagePath)) {
+                prioritizedPaths.append(imagePath);
+            }
+        }
+    }
+
+    // 限制队列大小
+    const int preloadQueueCapacity = 20;
+    for (const QString &path : prioritizedPaths) {
+        if (preloadQueue.size() >= preloadQueueCapacity) break;
+        preloadQueue.enqueue(path);
+    }
+
+    // 启动预加载
+    if (!preloadQueue.isEmpty()) {
+        QTimer::singleShot(20, this, &ThumbnailWidget::processPreloadQueue);
+    }
+}
+
+void ThumbnailWidget::processPreloadQueue()
+{
+    if (preloadQueue.isEmpty() || isLoading) return;
+
+    // 一次处理3张图片以提高效率
+    int processed = 0;
+    const int MAX_BATCH = 3;
+
+    while (!preloadQueue.isEmpty() && processed < MAX_BATCH) {
+        QString path = preloadQueue.dequeue();
+        if (!thumbnailCache.contains(path)) {
+            QtConcurrent::run([this, path]() {
+                QPixmap thumbnail = loadThumbnail(path);
+                QMetaObject::invokeMethod(this, "onThumbnailLoaded",
+                                          Qt::QueuedConnection,
+                                          Q_ARG(QString, path),
+                                          Q_ARG(QPixmap, thumbnail));
+            });
+            processed++;
+        }
+    }
+
+    // 如果还有更多，继续处理
+    if (!preloadQueue.isEmpty()) {
+        QTimer::singleShot(30, this, &ThumbnailWidget::processPreloadQueue);
+    }
+}
+
+// 修复的缩略图加载
 QPixmap ThumbnailWidget::loadThumbnail(const QString &path)
 {
     QPixmap original;
     if (original.load(path)) {
+        // 使用快速缩放算法
         QPixmap thumbnail = original.scaled(thumbnailSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-
-        // 将缩略图添加到缓存
-        QMutexLocker locker(&cacheMutex);
-        thumbnailCache.insert(path, thumbnail);
-
         return thumbnail;
     }
     return QPixmap();
 }
 
+void ThumbnailWidget::stopLoading()
+{
+    if (futureWatcher && futureWatcher->isRunning()) {
+        futureWatcher->cancel();
+        futureWatcher->waitForFinished();
+    }
+    isLoading = false;
+    preloadQueue.clear();
+}
+
+// 保留原有的其他方法...
 void ThumbnailWidget::updateThumbnails()
 {
     if (!futureWatcher) return;
@@ -115,28 +303,21 @@ void ThumbnailWidget::updateThumbnails()
     }
 }
 
-void ThumbnailWidget::stopLoading()
-{
-    if (futureWatcher && futureWatcher->isRunning()) {
-        futureWatcher->cancel();
-        futureWatcher->waitForFinished();
-    }
-    isLoading = false;
-}
-
 void ThumbnailWidget::clearThumbnailCache()
 {
     QMutexLocker locker(&cacheMutex);
     thumbnailCache.clear();
 }
 
-//确保设置选中索引时自动滚动到可见区域：
 void ThumbnailWidget::setSelectedIndex(int index)
 {
     if (index >= -1 && index < imageList.size() && index != selectedIndex) {
         selectedIndex = index;
-        update(); // 确保这里调用了 update() 来触发重绘
-        ensureVisible(index);// 确保选中的缩略图可见
+        update();
+        ensureVisible(index);
+
+        // 触发预加载
+        schedulePreload(index);
 
         qDebug() << "ThumbnailWidget 选中索引:" << index;
     }
@@ -147,7 +328,6 @@ int ThumbnailWidget::getSelectedIndex() const
     return selectedIndex;
 }
 
-//确保这个方法能正确计算缩略图位置并发出信号：
 void ThumbnailWidget::ensureVisible(int index)
 {
     if (index < 0 || index >= imageList.size()) return;
@@ -176,17 +356,17 @@ void ThumbnailWidget::paintEvent(QPaintEvent *event)
     if (imageList.isEmpty()) {
         painter.setPen(Qt::white);
         painter.drawText(rect(), Qt::AlignCenter,tr("欢迎使用图片查看器！\n\n"
-                                                  "使用方法：\n"
-                                                  "• 按 Ctrl+O 打开文件夹浏览图片\n"
-                                                  "• 按 Ctrl+Shift+O 打开单张图片\n"
-                                                  "• 按 F1 查看详细使用说明\n\n"
-                                                  "祝您使用愉快！"
-                                                  "\n"
-                                                  "\n"
-                         "没有图片文件\n拖拽图片文件夹到此窗口或右键选择打开文件夹"
-                                                  "\n"
-                                                  "\n"
-                         "F1 查看帮助 或右键弹出菜单使用"));
+                                                     "使用方法：\n"
+                                                     "• 按 Ctrl+O 打开文件夹浏览图片\n"
+                                                     "• 按 Ctrl+Shift+O 打开单张图片\n"
+                                                     "• 按 F1 查看详细使用说明\n\n"
+                                                     "祝您使用愉快！"
+                                                     "\n"
+                                                     "\n"
+                                                     "没有图片文件\n拖拽图片文件夹到此窗口或右键选择打开文件夹"
+                                                     "\n"
+                                                     "\n"
+                                                     "F1 查看帮助 或右键弹出菜单使用"));
         return;
     }
 
@@ -269,6 +449,7 @@ void ThumbnailWidget::mouseDoubleClickEvent(QMouseEvent *event)
     if (event->button() == Qt::LeftButton) {
         selectThumbnailAtPosition(event->pos());
         if (selectedIndex >= 0) {
+            // 重要：立即发射信号，不经过任何中间状态
             emit thumbnailClicked(selectedIndex);
         }
     }
@@ -372,4 +553,3 @@ void ThumbnailWidget::clearThumbnailCacheForImage(const QString &imagePath)
     QMutexLocker locker(&cacheMutex);
     thumbnailCache.remove(imagePath);
 }
-

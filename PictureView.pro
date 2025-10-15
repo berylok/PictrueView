@@ -30,9 +30,9 @@ DEFAULT_LANG = zh_CN
 RC_ICONS = icons/PictureView.ico
 
 # 基本应用信息
-VERSION = 1.3.8.0
+VERSION = 1.3.9.0
 QMAKE_TARGET_COMPANY = "berylok"
-QMAKE_TARGET_DESCRIPTION = "berylok app"
+QMAKE_TARGET_DESCRIPTION = "PictureView"
 QMAKE_TARGET_COPYRIGHT = "Copyright @ 2025 berylok"
 QMAKE_TARGET_PRODUCT = "PictureView"
 

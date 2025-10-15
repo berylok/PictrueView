@@ -1,6 +1,9 @@
 #ifndef THUMBNAILWIDGET_H
 #define THUMBNAILWIDGET_H
 
+// 在文件开头添加
+#define THUMBNAIL_CACHE_MAX_SIZE 200
+
 #include <QWidget>
 #include <QPixmap>
 #include <QDir>
@@ -13,6 +16,7 @@
 #include <QtConcurrent>
 #include <QMenu>
 #include <QAction>
+#include <QQueue>
 
 class ThumbnailWidget : public QWidget
 {
@@ -27,6 +31,8 @@ public:
     int getSelectedIndex() const;
     void stopLoading();
     void clearThumbnailCache();
+    void ensureVisible(int index);
+    static void clearThumbnailCacheForImage(const QString &imagePath);
 
 signals:
     void thumbnailClicked(int index);
@@ -35,17 +41,20 @@ signals:
 
 protected:
     void paintEvent(QPaintEvent *event) override;
-    void mousePressEvent(QMouseEvent *event) override; // 只有声明，没有实现
+    void mousePressEvent(QMouseEvent *event) override;
     void mouseDoubleClickEvent(QMouseEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
 
 private slots:
     void updateThumbnails();
+    void onThumbnailLoaded(const QString &path, const QPixmap &thumbnail);
+    void processPreloadQueue();
 
 private:
     void selectThumbnailAtPosition(const QPoint &pos);
-
     QPixmap loadThumbnail(const QString &path);
+    void schedulePreload(int centerIndex);
+    void cleanupThumbnailCache();
 
     QSize thumbnailSize;
     int thumbnailSpacing;
@@ -61,9 +70,13 @@ private:
     QFutureWatcher<QPixmap> *futureWatcher;
     bool isLoading;
 
-public:
-    static void clearThumbnailCacheForImage(const QString &imagePath);
-    void ensureVisible(int index);
+    // 预加载相关
+    QQueue<QString> preloadQueue;
+    const int preloadQueueCapacity = 50;
+    QRect lastVisibleRect;
+
+
+
 };
 
 #endif // THUMBNAILWIDGET_H
