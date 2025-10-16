@@ -100,18 +100,12 @@ ImageWidget::ImageWidget(QWidget *parent) : QWidget(parent),
     // 加载配置
     loadConfiguration();
 
-
-
-    // 如果配置中没有设置最大化，则显示最大化
-    // if (!this->isMaximized()) {
-    //     showMaximized();
-    // }
+    setMinimumSize(200, 100); // 设置窗口最小尺寸
 
     // 设置窗口无边框
     //setWindowFlags(Qt::FramelessWindowHint);
     //setAttribute(Qt::WA_TranslucentBackground, true);
     // 初始化窗口大小为最大化
-
 
     // 创建快捷键动作
     createShortcutActions();
@@ -125,15 +119,6 @@ ImageWidget::ImageWidget(QWidget *parent) : QWidget(parent),
     connect(slideshowTimer, &QTimer::timeout, this, &ImageWidget::slideshowNext);
 
     setMouseTracking(true); // 启用鼠标跟踪
-
-    // 延迟最大化显示，确保窗口完全初始化
-    QTimer::singleShot(100, this, [this]() {
-        if (!this->isMaximized()) {
-            this->showMaximized();
-        }
-    });
-
-    // 初始重绘以确保无残影
     update();
 
 }
@@ -329,23 +314,36 @@ void ImageWidget::saveConfiguration()
 {
     ConfigManager::Config config;
 
-    // 保存窗口状态
-    config.windowPosition = this->pos();
-    config.windowSize = this->size();
+    // 保存窗口状态 - 只在窗口正常状态下保存具体位置和大小
+    if (!this->isMaximized() && !this->isMinimized()) {
+        config.windowPosition = this->pos();
+        config.windowSize = this->size();
+    } else {
+        // 如果窗口是最大化或最小化状态，保存正常状态的位置和大小
+        QRect normalGeo = this->normalGeometry();
+        if (normalGeo.isValid() && !normalGeo.isNull()) {
+            config.windowPosition = normalGeo.topLeft();
+            config.windowSize = normalGeo.size();
+        } else {
+            // 备用方案：使用当前位置
+            config.windowPosition = this->pos();
+            config.windowSize = this->size();
+        }
+    }
+
     config.windowMaximized = this->isMaximized();
 
-
-    // 保存透明背景状态
+    // 保存其他配置...
     config.transparentBackground = this->testAttribute(Qt::WA_TranslucentBackground);
-
-    // 保存标题栏状态
     config.titleBarVisible = !(this->windowFlags() & Qt::FramelessWindowHint);
-
-    // 保存最后打开路径
+    //config.alwaysOnTop = this->windowFlags() & Qt::WindowStaysOnTopHint;
     config.lastOpenPath = currentConfig.lastOpenPath;
 
     configManager->saveConfig(config);
 
+    DEBUG_LOG << "保存配置 - 位置:" << config.windowPosition
+              << "大小:" << config.windowSize
+              << "最大化:" << config.windowMaximized;
 }
 
 // 修改 applyConfiguration 方法中的透明背景处理部分
@@ -378,21 +376,20 @@ void ImageWidget::applyConfiguration(const ConfigManager::Config &config)
         flags |= Qt::FramelessWindowHint;
     }
 
-    // 设置置顶状态
-    if (config.alwaysOnTop) {
-        flags |= Qt::WindowStaysOnTopHint;
-    } else {
-        flags &= ~Qt::WindowStaysOnTopHint;
-    }
 
     // 应用窗口标志
     if (flags != windowFlags()) {
         setWindowFlags(flags);
     }
 
-    // 设置窗口位置和大小
-    if (!config.windowPosition.isNull() && !config.windowMaximized && !normalGeometry.isNull()) {
-        move(config.windowPosition);
+    // 设置窗口位置和大小（只有在不是最大化时才设置）
+    if (!config.windowMaximized) {
+        if (!config.windowPosition.isNull()) {
+            move(config.windowPosition);
+        }
+        if (!config.windowSize.isEmpty()) {
+            resize(config.windowSize);
+        }
     }
 
     if (!config.windowSize.isEmpty() && !config.windowMaximized && !normalGeometry.isNull()) {
@@ -402,14 +399,10 @@ void ImageWidget::applyConfiguration(const ConfigManager::Config &config)
     // 设置窗口最大化状态
     if (config.windowMaximized) {
         showMaximized();
-    } else if (!normalGeometry.isNull()) {
-        setGeometry(normalGeometry);
-        showNormal();
     } else {
         showNormal();
     }
 
-    // 强制重绘以清除可能的残影
     update();
 
 }
@@ -437,9 +430,9 @@ void ImageWidget::toggleTitleBar()
     // 恢复窗口状态
     if (wasMaximized) {
         showMaximized();
-    } else if (!normalGeometry.isNull()) {
-        setGeometry(normalGeometry);
-        showNormal();
+    // } else if (!normalGeometry.isNull()) {
+    //     setGeometry(normalGeometry);
+    //     showNormal();
     } else {
         showNormal();
     }
@@ -462,21 +455,18 @@ void ImageWidget::fitToWindow()
 {
     if (pixmap.isNull()) return;
 
-    QSize windowSize;
+    QSize windowSize = this->size(); // 使用当前窗口的实际大小
 
-    // 重要：无论窗口背景如何，都强制使用屏幕尺寸
-    QScreen *screen = QGuiApplication::primaryScreen();
-    QRect desktopRect = screen->availableGeometry();
-    windowSize = desktopRect.size();
+    DEBUG_LOG << "fitToWindow - 窗口尺寸:" << windowSize
+              << "窗口最大化状态:" << isMaximized()
+              << "透明背景:" << hasTransparentBackground();
 
-    DEBUG_LOG  << "fitToWindow - 强制使用屏幕尺寸:" << windowSize
-             << "窗口最大化状态:" << isMaximized()
-             << "透明背景:" << hasTransparentBackground();
-
-    // 如果窗口不是最大化的，但我们要强制使用最大化尺寸
-    // 这样可以确保在任何背景下图片都按最大化尺寸显示
-    if (!isMaximized()) {
-        DEBUG_LOG  << "窗口未最大化，但仍使用屏幕尺寸计算";
+    // 如果窗口尺寸异常，使用屏幕尺寸作为后备
+    if (windowSize.width() <= 0 || windowSize.height() <= 0) {
+        QScreen *screen = QGuiApplication::primaryScreen();
+        QRect desktopRect = screen->availableGeometry();
+        windowSize = desktopRect.size();
+        DEBUG_LOG << "使用屏幕尺寸作为后备:" << windowSize;
     }
 
     QSize imageSize = pixmap.size();
@@ -492,11 +482,11 @@ void ImageWidget::fitToWindow()
 
     scaleFactor = qMin(widthRatio, heightRatio);
     panOffset = QPointF(0, 0);
-    //currentViewStateType = FitToWindow;
+    currentViewStateType = FitToWindow;
 
-    DEBUG_LOG  << "fitToWindow - 图片尺寸:" << imageSize
-             << "缩放因子:" << scaleFactor
-             << "缩放后尺寸:" << (imageSize * scaleFactor);
+    DEBUG_LOG << "fitToWindow - 图片尺寸:" << imageSize
+              << "缩放因子:" << scaleFactor
+              << "缩放后尺寸:" << (imageSize * scaleFactor);
 
     update();
 }
@@ -1719,6 +1709,44 @@ void ImageWidget::keyPressEvent(QKeyEvent *event)
         break;
     }
 
+    // 透明度调节功能 - 在单张模式和画布模式下都有效
+    if (currentViewMode == SingleView || canvasMode) {
+        switch (event->key()) {
+        case Qt::Key_PageUp:
+            // PageUp：增加透明度（变得更不透明）
+            {
+                double currentOpacity = windowOpacity();
+                double newOpacity = qMin(1.0, currentOpacity + 0.1);
+                setWindowOpacity(newOpacity);
+                m_windowOpacity = newOpacity;
+
+                // 更新配置中的透明度
+                saveConfiguration();
+
+                DEBUG_LOG << "透明度增加至:" << newOpacity;
+                event->accept();
+                return;
+            }
+            break;
+        case Qt::Key_PageDown:
+            // PageDown：减少透明度（变得更透明）
+            {
+                double currentOpacity = windowOpacity();
+                double newOpacity = qMax(0.1, currentOpacity - 0.1);
+                setWindowOpacity(newOpacity);
+                m_windowOpacity = newOpacity;
+
+                // 更新配置中的透明度
+                saveConfiguration();
+
+                DEBUG_LOG << "透明度减少至:" << newOpacity;
+                event->accept();
+                return;
+            }
+            break;
+        }
+    }
+
     // 在画布模式下，处理特定按键
     if (canvasMode) {
         switch (event->key()) {
@@ -1730,24 +1758,7 @@ void ImageWidget::keyPressEvent(QKeyEvent *event)
             // 菜单键显示上下文菜单
             showContextMenu(this->mapToGlobal(QPoint(width()/2, height()/2)));
             break;
-        case Qt::Key_PageUp:
-            // PageUp：增加透明度（变得更不透明）
-            {
-                double currentOpacity = windowOpacity(); // 正确调用
-                double newOpacity = qMin(1.0, currentOpacity + 0.1);
-                setWindowOpacity(newOpacity);
-                event->accept();
-            }
-            break;
-        case Qt::Key_PageDown:
-            // PageDown：减少透明度（变得更透明）
-            {
-                double currentOpacity = windowOpacity(); // 正确调用
-                double newOpacity = qMax(0.1, currentOpacity - 0.1);
-                setWindowOpacity(newOpacity);
-                event->accept();
-            }
-            break;
+        // PageUp 和 PageDown 已经在上面处理，这里不需要重复
         default:
             // 忽略其他所有按键
             event->ignore();
@@ -1991,8 +2002,19 @@ void ImageWidget::dropEvent(QDropEvent *event)
 void ImageWidget::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
+
     if (currentViewMode == ThumbnailView) {
         thumbnailWidget->update();
+    } else if (currentViewMode == SingleView) {
+        // 单张模式下，如果当前是合适大小模式，则重新计算缩放
+        if (currentViewStateType == FitToWindow && !pixmap.isNull()) {
+            DEBUG_LOG << "窗口大小改变，重新计算合适大小";
+            fitToWindow();
+        }
+        // 如果是手动调整模式，保持当前缩放和偏移，但可能需要重新计算显示位置
+        else if (currentViewStateType == ManualAdjustment && !pixmap.isNull()) {
+            update(); // 强制重绘以更新显示位置
+        }
     }
 }
 

@@ -44,7 +44,7 @@ TRANSLATIONS += \
 DEFAULT_LANG = zh_CN
 RC_ICONS = icons/PictureView.ico
 
-VERSION = 1.3.10.0
+VERSION = 1.3.11.0
 QMAKE_TARGET_COMPANY = "berylok"
 QMAKE_TARGET_DESCRIPTION = "PictureView"
 QMAKE_TARGET_COPYRIGHT = "Copyright @ 2025 berylok"

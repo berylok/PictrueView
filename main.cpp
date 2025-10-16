@@ -12,7 +12,7 @@ int main(int argc, char *argv[])
 
     // 设置应用程序信息
     app.setApplicationName("PictureView");
-    app.setApplicationVersion("1.3.10");
+    app.setApplicationVersion("1.3.11");
     app.setOrganizationName("berylok");
 
     // 创建翻译器
