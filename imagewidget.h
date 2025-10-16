@@ -2,6 +2,14 @@
 #ifndef IMAGEWIDGET_H
 #define IMAGEWIDGET_H
 
+#define ENABLE_DEBUG_LOGS 0
+
+#if ENABLE_DEBUG_LOGS
+#define DEBUG_LOG qDebug()
+#else
+#define DEBUG_LOG if(false) qDebug()
+#endif
+
 #include "qscrollarea.h"
 #include "thumbnailwidget.h"
 #include <QWidget>

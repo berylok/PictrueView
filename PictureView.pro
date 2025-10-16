@@ -1,6 +1,26 @@
+# PictureView.pro - 优化版本
 QT += core gui widgets concurrent
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 CONFIG += c++11
+
+# 发布版优化设置
+CONFIG(release, debug|release) {
+    # 使用O2优化而不是O3
+    QMAKE_CXXFLAGS_RELEASE -= -O3
+    QMAKE_CXXFLAGS_RELEASE += -O2
+
+    # 禁用可能产生问题的优化
+    QMAKE_CXXFLAGS_RELEASE -= -ffast-math
+
+    # 启用SSE优化（如果目标平台支持）
+    QMAKE_CXXFLAGS_RELEASE += -msse2
+}
+
+# 调试版设置
+CONFIG(debug, debug|release) {
+    # 确保调试版有足够的调试信息但不过度优化
+    QMAKE_CXXFLAGS_DEBUG += -O1
+}
 
 SOURCES += main.cpp \
     canvascontrolpanel.cpp \
@@ -14,26 +34,18 @@ HEADERS += \
     imagewidget.h \
     thumbnailwidget.h
 
-# 资源文件
 RESOURCES += \
     app.qrc
 
-# 翻译支持
 TRANSLATIONS += \
     translations/PictureView_zh_CN.ts \
     translations/PictureView_en_US.ts
 
-# 设置默认语言
 DEFAULT_LANG = zh_CN
-
-# .pro 文件 - 设置应用程序图标（必须用 ICO）
 RC_ICONS = icons/PictureView.ico
 
-# 基本应用信息
-VERSION = 1.3.9.0
+VERSION = 1.3.10.0
 QMAKE_TARGET_COMPANY = "berylok"
 QMAKE_TARGET_DESCRIPTION = "PictureView"
 QMAKE_TARGET_COPYRIGHT = "Copyright @ 2025 berylok"
 QMAKE_TARGET_PRODUCT = "PictureView"
-
-DISTFILES +=
