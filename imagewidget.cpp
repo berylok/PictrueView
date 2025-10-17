@@ -2284,7 +2284,7 @@ void ImageWidget::showAboutDialog()
         "</td>"
         "<td valign='top'>"
         "<h2 style='margin-top: 0;'>" + tr("图片查看器") + "</h2>"
-                             "<p><b>" + tr("版本:") + "</b> 1.3.10</p>"
+                             "<p><b>" + tr("版本:") + "</b> 1.3.11</p>"
                         "<p><b>" + tr("开发者:") + "</b> 幸运人的珠宝berylok</p>"
                           "<p><b>" + tr("描述:") + "</b> " + tr("一个功能丰富的图片查看器，支持多种浏览模式和画布功能") + "</p>"
                                                                                                "</td>"
