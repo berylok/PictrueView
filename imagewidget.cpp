@@ -100,12 +100,18 @@ ImageWidget::ImageWidget(QWidget *parent) : QWidget(parent),
     // 加载配置
     loadConfiguration();
 
-    setMinimumSize(200, 100); // 设置窗口最小尺寸
+
+
+    // 如果配置中没有设置最大化，则显示最大化
+    if (!this->isMaximized()) {
+        showMaximized();
+    }
 
     // 设置窗口无边框
     //setWindowFlags(Qt::FramelessWindowHint);
     //setAttribute(Qt::WA_TranslucentBackground, true);
     // 初始化窗口大小为最大化
+
 
     // 创建快捷键动作
     createShortcutActions();
@@ -119,6 +125,9 @@ ImageWidget::ImageWidget(QWidget *parent) : QWidget(parent),
     connect(slideshowTimer, &QTimer::timeout, this, &ImageWidget::slideshowNext);
 
     setMouseTracking(true); // 启用鼠标跟踪
+
+
+    // 初始重绘以确保无残影
     update();
 
 }
@@ -142,7 +151,7 @@ void ImageWidget::createControlPanel()
         connect(controlPanel, &CanvasControlPanel::exitCanvasMode, this, &ImageWidget::onExitCanvasMode);
         positionControlPanel();
         controlPanel->show();
-        DEBUG_LOG  << "控制面板已创建";
+        qDebug() << "控制面板已创建";
     }
 }
 
@@ -153,7 +162,7 @@ void ImageWidget::destroyControlPanel()
         controlPanel->hide();
         controlPanel->deleteLater();
         controlPanel = nullptr;
-        DEBUG_LOG  << "控制面板已销毁";
+        qDebug() << "控制面板已销毁";
     }
 }
 
@@ -169,14 +178,14 @@ void ImageWidget::positionControlPanel()
         int y = 10;
 
         controlPanel->move(x, y);
-        DEBUG_LOG  << "控制面板已定位到:" << x << "," << y;
+        qDebug() << "控制面板已定位到:" << x << "," << y;
     }
 }
 
 // 退出画布模式槽函数
 void ImageWidget::onExitCanvasMode()
 {
-    DEBUG_LOG  << "通过控制面板退出画布模式";
+    qDebug() << "通过控制面板退出画布模式";
     disableCanvasMode();
 }
 
@@ -193,7 +202,7 @@ void ImageWidget::toggleCanvasMode()
 
 void ImageWidget::enableCanvasMode()
 {
-    DEBUG_LOG  << "启用画布模式";
+    qDebug() << "启用画布模式";
 
     canvasMode = true;
 
@@ -245,7 +254,7 @@ void ImageWidget::enableCanvasMode()
 
 void ImageWidget::disableCanvasMode()
 {
-    DEBUG_LOG  << "禁用画布模式";
+    qDebug() << "禁用画布模式";
 
     canvasMode = false;
 
@@ -275,7 +284,7 @@ void ImageWidget::enableMousePassthrough()
 #endif
 
     mousePassthrough = true;
-
+    //logMessage("鼠标穿透已启用");
 }
 
 void ImageWidget::disableMousePassthrough()
@@ -287,6 +296,7 @@ void ImageWidget::disableMousePassthrough()
 #endif
 
     mousePassthrough = false;
+    //logMessage("鼠标穿透已禁用");
 }
 
 
@@ -314,36 +324,23 @@ void ImageWidget::saveConfiguration()
 {
     ConfigManager::Config config;
 
-    // 保存窗口状态 - 只在窗口正常状态下保存具体位置和大小
-    if (!this->isMaximized() && !this->isMinimized()) {
-        config.windowPosition = this->pos();
-        config.windowSize = this->size();
-    } else {
-        // 如果窗口是最大化或最小化状态，保存正常状态的位置和大小
-        QRect normalGeo = this->normalGeometry();
-        if (normalGeo.isValid() && !normalGeo.isNull()) {
-            config.windowPosition = normalGeo.topLeft();
-            config.windowSize = normalGeo.size();
-        } else {
-            // 备用方案：使用当前位置
-            config.windowPosition = this->pos();
-            config.windowSize = this->size();
-        }
-    }
-
+    // 保存窗口状态
+    config.windowPosition = this->pos();
+    config.windowSize = this->size();
     config.windowMaximized = this->isMaximized();
 
-    // 保存其他配置...
+
+    // 保存透明背景状态
     config.transparentBackground = this->testAttribute(Qt::WA_TranslucentBackground);
+
+    // 保存标题栏状态
     config.titleBarVisible = !(this->windowFlags() & Qt::FramelessWindowHint);
-    //config.alwaysOnTop = this->windowFlags() & Qt::WindowStaysOnTopHint;
+
+    // 保存最后打开路径
     config.lastOpenPath = currentConfig.lastOpenPath;
 
     configManager->saveConfig(config);
-
-    DEBUG_LOG << "保存配置 - 位置:" << config.windowPosition
-              << "大小:" << config.windowSize
-              << "最大化:" << config.windowMaximized;
+    //logMessage("配置已保存");
 }
 
 // 修改 applyConfiguration 方法中的透明背景处理部分
@@ -376,20 +373,21 @@ void ImageWidget::applyConfiguration(const ConfigManager::Config &config)
         flags |= Qt::FramelessWindowHint;
     }
 
+    // 设置置顶状态
+    if (config.alwaysOnTop) {
+        flags |= Qt::WindowStaysOnTopHint;
+    } else {
+        flags &= ~Qt::WindowStaysOnTopHint;
+    }
 
     // 应用窗口标志
     if (flags != windowFlags()) {
         setWindowFlags(flags);
     }
 
-    // 设置窗口位置和大小（只有在不是最大化时才设置）
-    if (!config.windowMaximized) {
-        if (!config.windowPosition.isNull()) {
-            move(config.windowPosition);
-        }
-        if (!config.windowSize.isEmpty()) {
-            resize(config.windowSize);
-        }
+    // 设置窗口位置和大小
+    if (!config.windowPosition.isNull() && !config.windowMaximized && !normalGeometry.isNull()) {
+        move(config.windowPosition);
     }
 
     if (!config.windowSize.isEmpty() && !config.windowMaximized && !normalGeometry.isNull()) {
@@ -399,12 +397,17 @@ void ImageWidget::applyConfiguration(const ConfigManager::Config &config)
     // 设置窗口最大化状态
     if (config.windowMaximized) {
         showMaximized();
+    } else if (!normalGeometry.isNull()) {
+        setGeometry(normalGeometry);
+        showNormal();
     } else {
         showNormal();
     }
 
+    // 强制重绘以清除可能的残影
     update();
 
+    //logMessage("配置已加载");
 }
 
 // 修改 toggleTitleBar 方法
@@ -420,9 +423,11 @@ void ImageWidget::toggleTitleBar()
     Qt::WindowFlags flags = windowFlags();
 
     if (flags & Qt::FramelessWindowHint) {
-        flags &= ~Qt::FramelessWindowHint;// 显示标题栏
+        // 显示标题栏
+        flags &= ~Qt::FramelessWindowHint;
     } else {
-        flags |= Qt::FramelessWindowHint;// 隐藏标题栏
+        // 隐藏标题栏
+        flags |= Qt::FramelessWindowHint;
     }
 
     setWindowFlags(flags);
@@ -430,9 +435,9 @@ void ImageWidget::toggleTitleBar()
     // 恢复窗口状态
     if (wasMaximized) {
         showMaximized();
-    // } else if (!normalGeometry.isNull()) {
-    //     setGeometry(normalGeometry);
-    //     showNormal();
+    } else if (!normalGeometry.isNull()) {
+        setGeometry(normalGeometry);
+        showNormal();
     } else {
         showNormal();
     }
@@ -440,72 +445,39 @@ void ImageWidget::toggleTitleBar()
     // 保存配置
     saveConfiguration();
 
+    //logMessage(QString("标题栏: %1").arg((flags & Qt::FramelessWindowHint) ? "隐藏" : "显示"));
 }
 
 
 
-
+// imagewidget.cpp
 void ImageWidget::setCurrentDir(const QDir &dir)
 {
     currentDir = dir;
 }
 
-
+// imagewidget.cpp
 void ImageWidget::fitToWindow()
 {
     if (pixmap.isNull()) return;
 
-    QSize windowSize = this->size(); // 使用当前窗口的实际大小
-
-    DEBUG_LOG << "fitToWindow - 窗口尺寸:" << windowSize
-              << "窗口最大化状态:" << isMaximized()
-              << "透明背景:" << hasTransparentBackground();
-
-    // 如果窗口尺寸异常，使用屏幕尺寸作为后备
-    if (windowSize.width() <= 0 || windowSize.height() <= 0) {
+    QSize windowSize = this->size();
+    if (windowSize.isEmpty() || windowSize.width() <= 0 || windowSize.height() <= 0) {
         QScreen *screen = QGuiApplication::primaryScreen();
         QRect desktopRect = screen->availableGeometry();
         windowSize = desktopRect.size();
-        DEBUG_LOG << "使用屏幕尺寸作为后备:" << windowSize;
     }
 
     QSize imageSize = pixmap.size();
-
-    // 确保图片尺寸有效
-    if (imageSize.isEmpty() || imageSize.width() <= 0 || imageSize.height() <= 0) {
-        qWarning() << "无效的图片尺寸";
-        return;
-    }
-
     double widthRatio = static_cast<double>(windowSize.width()) / imageSize.width();
     double heightRatio = static_cast<double>(windowSize.height()) / imageSize.height();
 
     scaleFactor = qMin(widthRatio, heightRatio);
     panOffset = QPointF(0, 0);
-    currentViewStateType = FitToWindow;
-
-    DEBUG_LOG << "fitToWindow - 图片尺寸:" << imageSize
-              << "缩放因子:" << scaleFactor
-              << "缩放后尺寸:" << (imageSize * scaleFactor);
+    currentViewStateType = FitToWindow; // 设置为合适大小模式
 
     update();
-}
-
-void ImageWidget::changeEvent(QEvent *event)
-{
-    if (event->type() == QEvent::WindowStateChange) {
-        QWindowStateChangeEvent *stateEvent = static_cast<QWindowStateChangeEvent*>(event);
-
-        // 窗口状态发生变化时重新计算合适大小
-        if (isMaximized() && currentViewMode == SingleView && !pixmap.isNull() && currentViewStateType == FitToWindow) {
-            DEBUG_LOG  << "窗口状态变化，重新计算合适大小";
-            QTimer::singleShot(100, this, [this]() {
-                fitToWindow();
-            });
-        }
-    }
-
-    QWidget::changeEvent(event);
+    //logMessage("图片已调整到合适大小");
 }
 
 void ImageWidget::actualSize()
@@ -517,16 +489,16 @@ void ImageWidget::actualSize()
     currentViewStateType = ActualSize; // 设置为实际大小模式
 
     update();
+    //logMessage("图片已调整到实际大小");
 }
 
-
+// imagewidget.cpp
 bool ImageWidget::loadImage(const QString &filePath, bool fromCache)
 {
-
     // 保存当前图片的视图状态（如果是手动调整的）
     if (!currentImagePath.isEmpty() && !pixmap.isNull() && currentViewStateType == ManualAdjustment) {
         // 如果是手动调整的，保存状态以便后续图片使用
-        DEBUG_LOG  << "保存手动调整状态: 缩放=" << scaleFactor << ", 偏移=" << panOffset;
+        qDebug() << "保存手动调整状态: 缩放=" << scaleFactor << ", 偏移=" << panOffset;
     }
 
     QFileInfo fileInfo(filePath);
@@ -539,10 +511,6 @@ bool ImageWidget::loadImage(const QString &filePath, bool fromCache)
         pixmap = imageCache.value(filePath);
     }
     else if (pixmap.load(filePath)) {
-
-        // 清除可能的缩略图缓存影响
-        imageCache.remove(filePath); // 清除缓存，确保下次重新加载
-
         if (!fromCache) {
             imageCache.insert(filePath, pixmap);
         }
@@ -554,7 +522,21 @@ bool ImageWidget::loadImage(const QString &filePath, bool fromCache)
     switch (currentViewStateType) {
     case FitToWindow:
         // 使用合适大小的设置
-        fitToWindow(); // 直接调用 fitToWindow 方法确保计算正确
+        {
+            QSize windowSize = this->size();
+            if (windowSize.isEmpty() || windowSize.width() <= 0 || windowSize.height() <= 0) {
+                QScreen *screen = QGuiApplication::primaryScreen();
+                QRect desktopRect = screen->availableGeometry();
+                windowSize = desktopRect.size();
+            }
+
+            QSize imageSize = pixmap.size();
+            double widthRatio = static_cast<double>(windowSize.width()) / imageSize.width();
+            double heightRatio = static_cast<double>(windowSize.height()) / imageSize.height();
+
+            scaleFactor = qMin(widthRatio, heightRatio);
+            panOffset = QPointF(0, 0);
+        }
         break;
     case ActualSize:
         // 使用实际大小的设置
@@ -569,21 +551,19 @@ bool ImageWidget::loadImage(const QString &filePath, bool fromCache)
 
     currentImagePath = filePath;
 
-    // 重要：确保当前图片索引正确设置
-
-    currentImageIndex = imageList.indexOf(fileInfo.fileName());
-
-    DEBUG_LOG  << "loadImage - 设置当前索引:" << currentImageIndex
-             << "文件名:" << fileInfo.fileName();
-
     // 检查目录是否改变
     bool dirChanged = (currentDir != fileInfo.absoluteDir());
     if (dirChanged) {
         currentDir = fileInfo.absoluteDir();
         loadImageList();
-        // 重新查找索引
-        currentImageIndex = imageList.indexOf(fileInfo.fileName());
-        DEBUG_LOG  << "目录改变，重新设置索引:" << currentImageIndex;
+    }
+
+    // 确保当前图片索引正确设置
+    currentImageIndex = imageList.indexOf(fileInfo.fileName());
+
+    // 如果当前是缩略图模式，更新选中项
+    if (currentViewMode == ThumbnailView && currentImageIndex >= 0) {
+        thumbnailWidget->setSelectedIndex(currentImageIndex);
     }
 
     update();
@@ -615,7 +595,7 @@ void ImageWidget::loadImageList()
     if (newImageList != imageList) {
         imageList = newImageList;
         thumbnailWidget->setImageList(imageList, currentDir);
-        DEBUG_LOG  << "找到图片文件:" << imageList.size() << "个";
+        qDebug() << "找到图片文件:" << imageList.size() << "个";
     }
 }
 
@@ -662,64 +642,64 @@ bool ImageWidget::loadImageByIndex(int index, bool fromCache)
 
 void ImageWidget::loadNextImage()
 {
-    DEBUG_LOG  << "=== loadNextImage 开始 ===";
-    DEBUG_LOG  << "当前模式:" << (currentViewMode == SingleView ? "单张" : "缩略图");
-    DEBUG_LOG  << "当前索引:" << currentImageIndex << "，图片总数:" << imageList.size();
+    qDebug() << "=== loadNextImage 开始 ===";
+    qDebug() << "当前模式:" << (currentViewMode == SingleView ? "单张" : "缩略图");
+    qDebug() << "当前索引:" << currentImageIndex << "，图片总数:" << imageList.size();
 
     if (imageList.isEmpty()) {
-        DEBUG_LOG  << "图片列表为空，返回";
+        qDebug() << "图片列表为空，返回";
         return;
     }
 
     int nextIndex = (currentImageIndex + 1) % imageList.size();
-    DEBUG_LOG  << "计算出的下一个索引:" << nextIndex;
+    qDebug() << "计算出的下一个索引:" << nextIndex;
 
     if (currentViewMode == SingleView) {
-        DEBUG_LOG  << "单张模式，加载图片";
+        qDebug() << "单张模式，加载图片";
         loadImageByIndex(nextIndex, true);
     } else {
         // 缩略图模式下，只更新索引和选中状态
-        DEBUG_LOG  << "缩略图模式，更新选中状态";
+        qDebug() << "缩略图模式，更新选中状态";
         currentImageIndex = nextIndex;
         thumbnailWidget->setSelectedIndex(currentImageIndex);
         thumbnailWidget->ensureVisible(currentImageIndex);
         updateWindowTitle();
 
-        DEBUG_LOG  << "更新后的当前索引:" << currentImageIndex;
+        qDebug() << "更新后的当前索引:" << currentImageIndex;
     }
 
-    DEBUG_LOG  << "=== loadNextImage 结束 ===";
+    qDebug() << "=== loadNextImage 结束 ===";
 }
 
 void ImageWidget::loadPreviousImage()
 {
-    DEBUG_LOG  << "=== loadPreviousImage 开始 ===";
-    DEBUG_LOG  << "当前模式:" << (currentViewMode == SingleView ? "单张" : "缩略图");
-    DEBUG_LOG  << "当前索引:" << currentImageIndex << "，图片总数:" << imageList.size();
+    qDebug() << "=== loadPreviousImage 开始 ===";
+    qDebug() << "当前模式:" << (currentViewMode == SingleView ? "单张" : "缩略图");
+    qDebug() << "当前索引:" << currentImageIndex << "，图片总数:" << imageList.size();
 
     if (imageList.isEmpty()) {
-        DEBUG_LOG  << "图片列表为空，返回";
+        qDebug() << "图片列表为空，返回";
         return;
     }
 
     int prevIndex = (currentImageIndex - 1 + imageList.size()) % imageList.size();
-    DEBUG_LOG  << "计算出的上一个索引:" << prevIndex;
+    qDebug() << "计算出的上一个索引:" << prevIndex;
 
     if (currentViewMode == SingleView) {
-        DEBUG_LOG  << "单张模式，加载图片";
+        qDebug() << "单张模式，加载图片";
         loadImageByIndex(prevIndex, true);
     } else {
         // 缩略图模式下，只更新索引和选中状态
-        DEBUG_LOG  << "缩略图模式，更新选中状态";
+        qDebug() << "缩略图模式，更新选中状态";
         currentImageIndex = prevIndex;
         thumbnailWidget->setSelectedIndex(currentImageIndex);
         thumbnailWidget->ensureVisible(currentImageIndex);
         updateWindowTitle();
 
-        DEBUG_LOG  << "更新后的当前索引:" << currentImageIndex;
+        qDebug() << "更新后的当前索引:" << currentImageIndex;
     }
 
-    DEBUG_LOG  << "=== loadPreviousImage 结束 ===";
+    qDebug() << "=== loadPreviousImage 结束 ===";
 }
 
 void ImageWidget::preloadAllImages()
@@ -736,6 +716,9 @@ void ImageWidget::preloadAllImages()
             // 移除单条日志消息，减少干扰
         }
     }
+    // 只保留一条总结性日志
+    //logMessage("预加载完成: " + QString::number(loadedCount) + "/" +
+               //QString::number(imageList.size()) + " 张图片");
 
     // 移除消息框提示，减少干扰
     updateWindowTitle();
@@ -745,7 +728,7 @@ void ImageWidget::clearImageCache()
 {
     int cacheSize = imageCache.size();
     imageCache.clear();
-
+    //logMessage("清空内存缓存: 释放了 " + QString::number(cacheSize) + " 张图片");
     updateWindowTitle();
 }
 
@@ -756,7 +739,7 @@ void ImageWidget::startSlideshow()
         isSlideshowActive = true;
         slideshowTimer->start(slideshowInterval);
         updateWindowTitle();
-
+        // 移除日志消息，避免干扰
     }
 }
 
@@ -765,7 +748,7 @@ void ImageWidget::stopSlideshow()
     isSlideshowActive = false;
     slideshowTimer->stop();
     updateWindowTitle();
-
+    //logMessage("幻灯:停止");
 }
 
 void ImageWidget::toggleSlideshow()
@@ -777,14 +760,14 @@ void ImageWidget::toggleSlideshow()
     }
 }
 
-
+// imagewidget.cpp
 void ImageWidget::setSlideshowInterval(int interval)
 {
     slideshowInterval = interval;
     if (isSlideshowActive) {
         slideshowTimer->setInterval(slideshowInterval);
     }
-
+    //logMessage(QString("幻灯间隔:设置为 %1 毫秒").arg(interval));
 }
 
 void ImageWidget::slideshowNext()
@@ -852,6 +835,19 @@ QString ImageWidget::getShortPathName(const QString &longPath)
     return longPath;
 }
 
+void ImageWidget::logMessage(const QString &message)
+{
+    // 注释掉日志记录，减少干扰
+    /*
+    QString logPath = QStandardPaths::writableLocation(QStandardPaths::DesktopLocation) + "/app_log.txt";
+    QFile logFile(logPath);
+    if (logFile.open(QIODevice::WriteOnly | QIODevice::Append)) {
+        QTextStream stream(&logFile);
+        stream << QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss") << " - " << message << "\n";
+        logFile.close();
+    }
+    */
+}
 
 void ImageWidget::registerFileAssociation(const QString &fileExtension, const QString &fileTypeName, const QString &openCommand)
 {
@@ -886,7 +882,7 @@ void ImageWidget::switchToThumbnailView()
 
     // 设置当前选中的缩略图索引
     if (currentImageIndex >= 0 && currentImageIndex < imageList.size()) {
-        DEBUG_LOG  << "切换到缩略图模式，设置选中索引:" << currentImageIndex;
+        qDebug() << "切换到缩略图模式，设置选中索引:" << currentImageIndex;
         thumbnailWidget->setSelectedIndex(currentImageIndex);
 
         // 延迟确保滚动位置正确
@@ -895,7 +891,7 @@ void ImageWidget::switchToThumbnailView()
         });
     } else if (!imageList.isEmpty()) {
         currentImageIndex = 0;
-        DEBUG_LOG  << "切换到缩略图模式，设置默认选中索引:" << currentImageIndex;
+        qDebug() << "切换到缩略图模式，设置默认选中索引:" << currentImageIndex;
         thumbnailWidget->setSelectedIndex(0);
 
         // 延迟确保滚动位置正确
@@ -903,7 +899,7 @@ void ImageWidget::switchToThumbnailView()
             thumbnailWidget->ensureVisible(0);
         });
     } else {
-        DEBUG_LOG  << "切换到缩略图模式，无图片可选中";
+        qDebug() << "切换到缩略图模式，无图片可选中";
         currentImageIndex = -1;
     }
 
@@ -914,41 +910,16 @@ void ImageWidget::switchToThumbnailView()
 
 void ImageWidget::switchToSingleView(int index)
 {
-    // 重要：检查当前是否已经在单张模式，避免不必要的切换
-    if (currentViewMode == SingleView) {
-        // 如果已经在单张模式，只需要更新图片
-        if (index >= 0 && index < imageList.size()) {
-            currentImageIndex = index;
-            loadImageByIndex(index, false);
-        }
-        return;
-    }
-
-    // 从缩略图模式切换到单张模式
     currentViewMode = SingleView;
     scrollArea->hide();
 
-    // 重要：重置为合适大小模式
-    currentViewStateType = FitToWindow;
-
     // 如果有有效的索引，加载对应的图片
     if (index >= 0 && index < imageList.size()) {
-        currentImageIndex = index;
-        loadImageByIndex(index, false);
+        // 不再保存当前状态
+        loadImageByIndex(index);
     }
 
-    // 确保获得焦点
-    setFocus();
-
-    // 立即更新窗口标题和重绘
-    updateWindowTitle();
     update();
-
-    // 延迟重新计算合适大小
-    QTimer::singleShot(100, this, [this]() {
-        DEBUG_LOG  << "切换到单张视图后重新计算合适大小";
-        fitToWindow();
-    });
 }
 
 void ImageWidget::openFolder()
@@ -965,6 +936,9 @@ void ImageWidget::openFolder()
         currentConfig.lastOpenPath = folderPath;
         saveConfiguration(); // 立即保存配置
 
+        // 重置为合适大小模式
+        currentViewStateType = FitToWindow;
+
         currentDir = QDir(folderPath);
         loadImageList();
 
@@ -976,10 +950,10 @@ void ImageWidget::openFolder()
         if (!imageList.isEmpty()) {
             currentImageIndex = 0;
             thumbnailWidget->setSelectedIndex(0);
-            DEBUG_LOG  << "设置选中索引为 0，图片列表大小:" << imageList.size();
+            qDebug() << "设置选中索引为 0，图片列表大小:" << imageList.size();
         } else {
             currentImageIndex = -1;
-            DEBUG_LOG  << "图片列表为空，选中索引保持为 -1";
+            qDebug() << "图片列表为空，选中索引保持为 -1";
         }
 
         // 确保窗口正常显示
@@ -1032,6 +1006,8 @@ void ImageWidget::openImage()
     }
 }
 
+// imagewidget.cpp
+// 修改 paintEvent 方法，正确处理透明背景
 void ImageWidget::paintEvent(QPaintEvent *event)
 {
     if (currentViewMode == SingleView) {
@@ -1054,16 +1030,6 @@ void ImageWidget::paintEvent(QPaintEvent *event)
             return;
         }
 
-        QSize currentWindowSize = this->size();
-        DEBUG_LOG  << "paintEvent - 当前窗口尺寸:" << currentWindowSize;
-
-        // 如果检测到窗口尺寸可能不正确，重新计算
-        if (currentViewStateType == FitToWindow &&
-            (currentWindowSize.width() < 100 || currentWindowSize.height() < 100)) {
-            DEBUG_LOG  << "检测到异常窗口尺寸，重新计算合适大小";
-            //fitToWindow();
-            return; // 重新绘制
-        }
 
 
         QSize scaledSize = pixmap.size() * scaleFactor;
@@ -1103,40 +1069,7 @@ void ImageWidget::paintEvent(QPaintEvent *event)
 void ImageWidget::onThumbnailClicked(int index)
 {
     currentImageIndex = index;
-    // switchToSingleView(index); // 切换到单张视图
-    // 立即切换到单张视图，不显示缩略图模式
-    switchToSingleViewDirectly(index);
-}
-
-void ImageWidget::switchToSingleViewDirectly(int index)
-{
-    // 直接设置模式，不触发任何中间状态
-    currentViewMode = SingleView;
-    scrollArea->hide();
-
-    // 重要：重置为合适大小模式
-    currentViewStateType = FitToWindow;
-
-    // 如果有有效的索引，加载对应的图片
-    if (index >= 0 && index < imageList.size()) {
-        currentImageIndex = index;
-        loadImageByIndex(index, false);
-    }
-
-    // 确保获得焦点
-    setFocus();
-
-    // 立即更新窗口标题
-    updateWindowTitle();
-
-    // 重要：立即重绘，不显示缩略图模式
-    update();
-
-    // 延迟重新计算合适大小
-    QTimer::singleShot(100, this, [this]() {
-        DEBUG_LOG  << "直接切换到单张视图后重新计算合适大小";
-        fitToWindow();
-    });
+    switchToSingleView(index); // 切换到单张视图
 }
 
 void ImageWidget::onEnsureRectVisible(const QRect &rect)
@@ -1199,13 +1132,16 @@ void ImageWidget::toggleTransparentBackground()
     bool currentState = testAttribute(Qt::WA_TranslucentBackground);
 
     if (currentState) {
-        setAttribute(Qt::WA_TranslucentBackground, false);// 关闭透明背景
+        // 关闭透明背景
+        setAttribute(Qt::WA_TranslucentBackground, false);
         setAutoFillBackground(true);
-        qDebug("透明背景 关闭");
 
+        qDebug("透明背景 关闭");
     } else {
-        setAttribute(Qt::WA_TranslucentBackground, true);// 启用透明背景
+        // 启用透明背景
+        setAttribute(Qt::WA_TranslucentBackground, true);
         setAutoFillBackground(false);
+
         qDebug("透明背景 开启");
     }
 
@@ -1215,6 +1151,7 @@ void ImageWidget::toggleTransparentBackground()
     // 保存配置
     saveConfiguration();
 
+    //logMessage(QString("透明背景: %1").arg(!currentState ? "开启" : "关闭"));
 }
 
 void ImageWidget::copyImageToClipboard()
@@ -1222,7 +1159,7 @@ void ImageWidget::copyImageToClipboard()
     if (!pixmap.isNull()) {
         QClipboard *clipboard = QApplication::clipboard();
         clipboard->setPixmap(pixmap);
-
+        //logMessage("图片已复制到剪贴板");
     }
 }
 
@@ -1242,7 +1179,7 @@ void ImageWidget::pasteImageFromClipboard()
             imageList.clear();
             update();
             updateWindowTitle();
-
+            //logMessage("从剪贴板粘贴图片");
         }
     }
 }
@@ -1258,9 +1195,9 @@ void ImageWidget::saveImage()
                                                     "Images (*.png *.jpg *.bmp *.jpeg *.webp)");
     if (!fileName.isEmpty()) {
         if (pixmap.save(fileName)) {
-            DEBUG_LOG <<"图片已保存: " + fileName;
+            //logMessage("图片已保存: " + fileName);
         } else {
-           DEBUG_LOG <<"保存图片失败: " + fileName;
+            //logMessage("保存图片失败: " + fileName);
         }
     }
 }
@@ -1307,14 +1244,15 @@ void ImageWidget::showContextMenu(const QPoint &globalPos)
         contextMenu.addAction(tr("合适大小 (↑)"), this, &ImageWidget::fitToWindow);
         contextMenu.addAction(tr("实际大小 (↓)"), this, &ImageWidget::actualSize);
         contextMenu.addSeparator();
-
         // 添加删除菜单项
         contextMenu.addAction(tr("删除当前图片 (Del)"), this, &ImageWidget::deleteCurrentImage);
+        //contextMenu.addAction(tr("永久删除"), this, &ImageWidget::permanentlyDeleteCurrentImage);
         contextMenu.addSeparator();
 
     }   else    {
         // 缩略图模式下的菜单
         contextMenu.addAction(tr("删除选中图片 (Del)"), this, &ImageWidget::deleteSelectedThumbnail);
+        //contextMenu.addAction("永久删除", this, &ImageWidget::permanentlyDeleteCurrentImage);
         contextMenu.addSeparator();
     }
 
@@ -1417,7 +1355,7 @@ void ImageWidget::showContextMenu(const QPoint &globalPos)
             QAction *canvasModeAction = windowshowMenu->addAction(tr("进入画布模式 (Insert)"));
             connect(canvasModeAction, &QAction::triggered, this, &ImageWidget::toggleCanvasMode);
         }
-
+        //contextMenu.addSeparator();
     }
 
     //幻灯
@@ -1656,7 +1594,7 @@ void ImageWidget::wheelEvent(QWheelEvent *event)
 
 void ImageWidget::keyPressEvent(QKeyEvent *event)
 {
-    DEBUG_LOG <<"key:"<<event->key();
+    qDebug()<<"key:"<<event->key();
 
     // 检查快捷键组合
     if (event->modifiers() & Qt::ControlModifier) {
@@ -1709,44 +1647,7 @@ void ImageWidget::keyPressEvent(QKeyEvent *event)
         break;
     }
 
-    // 透明度调节功能 - 在单张模式和画布模式下都有效
-    if (currentViewMode == SingleView || canvasMode) {
-        switch (event->key()) {
-        case Qt::Key_PageUp:
-            // PageUp：增加透明度（变得更不透明）
-            {
-                double currentOpacity = windowOpacity();
-                double newOpacity = qMin(1.0, currentOpacity + 0.1);
-                setWindowOpacity(newOpacity);
-                m_windowOpacity = newOpacity;
-
-                // 更新配置中的透明度
-                saveConfiguration();
-
-                DEBUG_LOG << "透明度增加至:" << newOpacity;
-                event->accept();
-                return;
-            }
-            break;
-        case Qt::Key_PageDown:
-            // PageDown：减少透明度（变得更透明）
-            {
-                double currentOpacity = windowOpacity();
-                double newOpacity = qMax(0.1, currentOpacity - 0.1);
-                setWindowOpacity(newOpacity);
-                m_windowOpacity = newOpacity;
-
-                // 更新配置中的透明度
-                saveConfiguration();
-
-                DEBUG_LOG << "透明度减少至:" << newOpacity;
-                event->accept();
-                return;
-            }
-            break;
-        }
-    }
-
+    // 在画布模式下，只响应特定的退出键
     // 在画布模式下，处理特定按键
     if (canvasMode) {
         switch (event->key()) {
@@ -1758,7 +1659,24 @@ void ImageWidget::keyPressEvent(QKeyEvent *event)
             // 菜单键显示上下文菜单
             showContextMenu(this->mapToGlobal(QPoint(width()/2, height()/2)));
             break;
-        // PageUp 和 PageDown 已经在上面处理，这里不需要重复
+        case Qt::Key_PageUp:
+            // PageUp：增加透明度（变得更不透明）
+            {
+                double currentOpacity = windowOpacity(); // 正确调用
+                double newOpacity = qMin(1.0, currentOpacity + 0.1);
+                setWindowOpacity(newOpacity);
+                event->accept();
+            }
+            break;
+        case Qt::Key_PageDown:
+            // PageDown：减少透明度（变得更透明）
+            {
+                double currentOpacity = windowOpacity(); // 正确调用
+                double newOpacity = qMax(0.1, currentOpacity - 0.1);
+                setWindowOpacity(newOpacity);
+                event->accept();
+            }
+            break;
         default:
             // 忽略其他所有按键
             event->ignore();
@@ -1769,7 +1687,7 @@ void ImageWidget::keyPressEvent(QKeyEvent *event)
 
     if (currentViewMode == SingleView) {//单张图片模式
         switch (event->key()) {
-            DEBUG_LOG <<"s_key:"<<event->key();
+            qDebug()<<"s_key:"<<event->key();
         case Qt::Key_Left:
             loadPreviousImage();
             break;
@@ -1953,9 +1871,11 @@ void ImageWidget::dropEvent(QDropEvent *event)
 
         // 只处理第一个拖拽项
         QString filePath = urlList.first().toLocalFile();
+        //logMessage("拖拽消息:" + filePath);
 
         QFileInfo fileInfo(filePath);
         if (!fileInfo.exists()) {
+
             return;
         }
 
@@ -1974,9 +1894,8 @@ void ImageWidget::dropEvent(QDropEvent *event)
             scrollArea->show();
             currentImageIndex = -1;
             update();
-            DEBUG_LOG <<"打开文件夹:" + filePath;
+            //logMessage("打开文件夹:" + filePath);
         } else if (fileInfo.isFile()) {
-
             // 处理文件拖拽
             if (loadImage(filePath)) {
 
@@ -1991,7 +1910,9 @@ void ImageWidget::dropEvent(QDropEvent *event)
                     update();
                 }
                 updateWindowTitle();
-
+                //logMessage("打开文件:" + filePath);
+            } else {
+                ////logMessage("打开文件失败:" + filePath);
             }
         }
 
@@ -2002,32 +1923,21 @@ void ImageWidget::dropEvent(QDropEvent *event)
 void ImageWidget::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
-
     if (currentViewMode == ThumbnailView) {
         thumbnailWidget->update();
-    } else if (currentViewMode == SingleView) {
-        // 单张模式下，如果当前是合适大小模式，则重新计算缩放
-        if (currentViewStateType == FitToWindow && !pixmap.isNull()) {
-            DEBUG_LOG << "窗口大小改变，重新计算合适大小";
-            fitToWindow();
-        }
-        // 如果是手动调整模式，保持当前缩放和偏移，但可能需要重新计算显示位置
-        else if (currentViewStateType == ManualAdjustment && !pixmap.isNull()) {
-            update(); // 强制重绘以更新显示位置
-        }
     }
 }
 
 // imagewidget.cpp
 void ImageWidget::testKeyboard()
 {
-    DEBUG_LOG  <<"=== 键盘测试开始 ===";
-    DEBUG_LOG  << "当前焦点部件:" << (QApplication::focusWidget() ? QApplication::focusWidget()->objectName() : "无");
-    DEBUG_LOG  << "缩略图部件焦点状态:" << thumbnailWidget->hasFocus();
-    DEBUG_LOG  << "当前模式:" << (currentViewMode == SingleView ? "单张" : "缩略图");
-    DEBUG_LOG  << "图片列表大小:" << imageList.size();
-    DEBUG_LOG  << "当前选中索引:" << currentImageIndex;
-    DEBUG_LOG  <<"=== 键盘测试结束 ===";
+    qDebug() <<"=== 键盘测试开始 ===";
+    qDebug() << "当前焦点部件:" << (QApplication::focusWidget() ? QApplication::focusWidget()->objectName() : "无");
+    qDebug() << "缩略图部件焦点状态:" << thumbnailWidget->hasFocus();
+    qDebug() << "当前模式:" << (currentViewMode == SingleView ? "单张" : "缩略图");
+    qDebug() << "图片列表大小:" << imageList.size();
+    qDebug() << "当前选中索引:" << currentImageIndex;
+    qDebug() <<"=== 键盘测试结束 ===";
 }
 
 
@@ -2053,7 +1963,7 @@ void ImageWidget::deleteCurrentImage()
 
     // 移动到回收站而不是直接删除
     if (moveFileToRecycleBin(imageToDelete)) {
-        DEBUG_LOG <<"已将图片移动到回收站: " + imageToDelete;
+        //logMessage("已将图片移动到回收站: " + imageToDelete);
 
         // 从缓存中移除
         imageCache.remove(imageToDelete);
@@ -2175,7 +2085,7 @@ void ImageWidget::permanentlyDeleteCurrentImage()
 
     // 直接删除文件
     if (QFile::remove(imageToDelete)) {
-        DEBUG_LOG <<"已永久删除图片: " + imageToDelete;
+        //logMessage("已永久删除图片: " + imageToDelete);
 
         // 其余代码与 deleteCurrentImage 相同
         imageCache.remove(imageToDelete);
@@ -2259,7 +2169,7 @@ void ImageWidget::createShortcutActions()
     connect(aboutAction, &QAction::triggered, this, &ImageWidget::showAboutDialog);
     this->addAction(aboutAction);
 
-    DEBUG_LOG  << "快捷键已创建: "
+    qDebug() << "快捷键已创建: "
              << "Ctrl+O (打开文件夹), "
              << "Ctrl+Shift+O (打开图片), "
              << "Ctrl+S (保存图片), "
@@ -2284,7 +2194,7 @@ void ImageWidget::showAboutDialog()
         "</td>"
         "<td valign='top'>"
         "<h2 style='margin-top: 0;'>" + tr("图片查看器") + "</h2>"
-                             "<p><b>" + tr("版本:") + "</b> 1.3.11</p>"
+                             "<p><b>" + tr("版本:") + "</b> 1.38</p>"
                         "<p><b>" + tr("开发者:") + "</b> 幸运人的珠宝berylok</p>"
                           "<p><b>" + tr("描述:") + "</b> " + tr("一个功能丰富的图片查看器，支持多种浏览模式和画布功能") + "</p>"
                                                                                                "</td>"
@@ -2444,4 +2354,3 @@ void ImageWidget::showShortcutHelp()
         enableMousePassthrough();
     }
 }
-
