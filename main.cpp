@@ -12,7 +12,7 @@ int main(int argc, char *argv[])
 
     // 设置应用程序信息
     app.setApplicationName("PictureView");
-    app.setApplicationVersion("1.3.11");
+    app.setApplicationVersion("1.3.8.1");
     app.setOrganizationName("berylok");
 
     // 创建翻译器
@@ -80,38 +80,22 @@ int main(int argc, char *argv[])
 
     if (argc > 1) {
         QString filePath = QString::fromLocal8Bit(argv[1]);
-        qDebug() << "命令行打开文件:" << filePath;
+        qDebug() << QCoreApplication::translate("main", "Opening file:") << filePath;
 
         if (QFile::exists(filePath)) {
             QFileInfo fileInfo(filePath);
             if (fileInfo.isDir()) {
-                // 文件夹：使用缩略图模式
                 window.setCurrentDir(QDir(filePath));
                 window.loadImageList();
-                // 确保是缩略图模式
-                window.switchToThumbnailView();
             } else {
-                // 单张图片：使用单张视图模式
-                // 重要：先设置目录和图片列表
-                window.setCurrentDir(fileInfo.absoluteDir());
-                window.loadImageList();
-
-                // 找到图片在列表中的索引
-                int index = window.getImageList().indexOf(fileInfo.fileName());
-                qDebug() << "图片在列表中的索引:" << index;
-
-                if (index >= 0) {
-                    // 重要：使用带索引的切换方法，确保正确设置单张模式
-                    window.switchToSingleView(index);
-                } else {
-                    // 如果不在列表中，直接加载图片并切换到单张模式
-                    window.loadImage(filePath);
-                    window.switchToSingleView();
-                }
+                window.loadImage(filePath);
+                window.switchToSingleView();
             }
         } else {
-            qWarning() << "文件不存在:" << filePath;
-            QMessageBox::warning(nullptr, "错误", "文件不存在:\n" + filePath);
+            qWarning() << QCoreApplication::translate("main", "File does not exist:") << filePath;
+            QMessageBox::warning(nullptr,
+                                 QCoreApplication::translate("main", "Error"),
+                                 QCoreApplication::translate("main", "File does not exist:\n%1").arg(filePath));
         }
     }
 

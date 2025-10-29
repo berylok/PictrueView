@@ -2,14 +2,6 @@
 #ifndef IMAGEWIDGET_H
 #define IMAGEWIDGET_H
 
-#define ENABLE_DEBUG_LOGS 0
-
-#if ENABLE_DEBUG_LOGS
-#define DEBUG_LOG qDebug()
-#else
-#define DEBUG_LOG if(false) qDebug()
-#endif
-
 #include "qscrollarea.h"
 #include "thumbnailwidget.h"
 #include <QWidget>
@@ -50,7 +42,7 @@ public:
     void slideshowNext();
     void updateWindowTitle();
     QString getShortPathName(const QString &longPath);
-
+    void logMessage(const QString &message);
     void registerFileAssociation(const QString &fileExtension, const QString &fileTypeName, const QString &openCommand);
     void switchToSingleView(int index = -1);
     void switchToThumbnailView();
@@ -74,9 +66,6 @@ protected:
     void resizeEvent(QResizeEvent *event) override;
 
     void closeEvent(QCloseEvent *event) override;  // 添加关闭事件处理
-protected:
-    void changeEvent(QEvent *event) override;
-
 
 private slots:
     void onThumbnailClicked(int index);
@@ -250,14 +239,25 @@ private:
     void showAboutDialog();  // 新增：显示关于对话框
     QAction *aboutAction;    // 新增：关于动作
 
+    // 镜像和旋转功能
+    void mirrorHorizontal();    // 水平镜像
+    void mirrorVertical();      // 垂直镜像
+    void rotate90CW();          // 顺时针旋转90度
+    void rotate90CCW();         // 逆时针旋转90度
+    void rotate180();           // 旋转180度
+    void resetTransform();      // 重置变换
 
-    void switchToSingleViewDirectly(int index);
-public:
-    // 获取图片列表
-    QStringList getImageList() const { return imageList; }
+    void applyTransformations();  // 应用所有变换的核心函数
 
-    // 设置视图状态为合适大小
-    void setViewStateToFitToWindow() { currentViewStateType = FitToWindow; }
+    // 变换状态
+    bool isTransformed() const; // 检查是否有变换
+
+private:
+    // 变换相关变量
+    int rotationAngle;           // 旋转角度 (0, 90, 180, 270)
+    bool isHorizontallyFlipped;  // 水平镜像
+    bool isVerticallyFlipped;    // 垂直镜像
+    QPixmap originalPixmap;      // 存储原始图片，用于重置变换
 
 };
 
