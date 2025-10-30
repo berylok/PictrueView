@@ -57,10 +57,13 @@ ImageWidget::ImageWidget(QWidget *parent) : QWidget(parent),
     pasteImageAction(nullptr),     // 新增：初始化关于动作为nullptr
     aboutAction(nullptr),  // 确保在这里初始化 controlPanel
 
-    rotationAngle(0),
+    rotationAngle(0),//旋转、镜像 初始化
     isHorizontallyFlipped(false),
-    isVerticallyFlipped(false)
+    isVerticallyFlipped(false),
 
+    m_archiveHandler(new LibArchiveHandler(this)), //压缩包初始化
+    m_isArchiveMode(false),
+    m_currentArchivePath("")
 {
     // 创建配置管理器
     configManager = new ConfigManager("image_viewer_config.ini");
@@ -95,6 +98,10 @@ ImageWidget::ImageWidget(QWidget *parent) : QWidget(parent),
     // 修改信号连接 - 确保双击能打开图片
     connect(thumbnailWidget, &ThumbnailWidget::thumbnailClicked, this, &ImageWidget::onThumbnailClicked);
     connect(thumbnailWidget, &ThumbnailWidget::ensureRectVisible, this, &ImageWidget::onEnsureRectVisible);
+
+    // 连接压缩包加载信号
+    connect(m_archiveHandler, &LibArchiveHandler::archiveLoaded,
+            this, &ImageWidget::onArchiveLoaded);
 
     mainLayout->addWidget(scrollArea);
 
@@ -376,29 +383,31 @@ void ImageWidget::applyConfiguration(const ConfigManager::Config &config)
         setWindowFlags(flags);
     }
 
-    // 设置窗口位置和大小
-    if (!config.windowPosition.isNull() && !config.windowMaximized && !normalGeometry.isNull()) {
+    // === 修复：修改窗口位置和大小的应用逻辑 ===
+
+    // 设置窗口位置（只有在不是最大化状态且有有效位置时才设置）
+    if (!config.windowPosition.isNull() && !config.windowMaximized) {
         move(config.windowPosition);
     }
 
-    if (!config.windowSize.isEmpty() && !config.windowMaximized && !normalGeometry.isNull()) {
+    // 设置窗口大小（只有在不是最大化状态且有有效大小时才设置）
+    if (!config.windowSize.isEmpty() && !config.windowMaximized) {
         resize(config.windowSize);
     }
 
     // 设置窗口最大化状态
     if (config.windowMaximized) {
         showMaximized();
-    } else if (!normalGeometry.isNull()) {
-        setGeometry(normalGeometry);
-        showNormal();
     } else {
         showNormal();
+
+        // 如果配置中有位置和大小，但当前normalGeometry无效，使用配置的值
+        if (normalGeometry.isNull() && !config.windowPosition.isNull() && !config.windowSize.isEmpty()) {
+            move(config.windowPosition);
+            resize(config.windowSize);
+        }
     }
-
-    // 强制重绘以清除可能的残影
     update();
-
-
 }
 
 // 修改 toggleTitleBar 方法
@@ -486,6 +495,11 @@ void ImageWidget::actualSize()
 // 载入图片
 bool ImageWidget::loadImage(const QString &filePath, bool fromCache)
 {
+    // 检查是否为压缩包
+    if (LibArchiveHandler::isSupportedArchive(filePath)) {
+        return loadArchive(filePath);
+    }
+
     // 保存当前图片的视图状态（如果是手动调整的）
     if (!currentImagePath.isEmpty() && !pixmap.isNull() && currentViewStateType == ManualAdjustment) {
         qDebug() << "保存手动调整状态: 缩放=" << scaleFactor << ", 偏移=" << panOffset;
@@ -508,6 +522,12 @@ bool ImageWidget::loadImage(const QString &filePath, bool fromCache)
     } else {
         return false;
     }
+
+
+    // 退出压缩包模式
+    m_isArchiveMode = false;
+    m_currentArchivePath.clear();
+
 
     // 保存原始图片并重置变换状态
     originalPixmap = loadedPixmap;
@@ -552,6 +572,122 @@ bool ImageWidget::loadImage(const QString &filePath, bool fromCache)
     updateWindowTitle();
 
     return true;
+}
+
+// 添加压缩包加载函数
+void ImageWidget::switchToThumbnailViewForArchive()
+{
+    qDebug() << "切换到压缩包缩略图模式";
+
+    currentViewMode = ThumbnailView;
+    scrollArea->show();
+    scrollArea->raise();
+
+    // 确保缩略图部件获得焦点
+    thumbnailWidget->setFocus();
+
+    // 更新窗口标题显示压缩包信息
+    updateWindowTitle();
+
+    // 确保窗口正常显示
+    ensureWindowVisible();
+    update();
+}
+// 添加压缩包图片加载函数
+// imagewidget.cpp
+bool ImageWidget::loadArchiveImageByIndex(int index)
+{
+    qDebug() << "=== 开始加载压缩包图片 ===";
+    qDebug() << "索引:" << index << "，压缩包模式:" << m_isArchiveMode;
+
+    if (!m_isArchiveMode) {
+        qDebug() << "错误: 当前不是压缩包模式";
+        return false;
+    }
+
+    if (!m_archiveHandler) {
+        qDebug() << "错误: archiveHandler 为空";
+        return false;
+    }
+
+    // 增强边界检查
+    if (index < 0 || index >= m_archiveHandler->imageCount()) {
+        qDebug() << "错误: 索引超出范围" << index << "/" << m_archiveHandler->imageCount();
+        return false;
+    }
+
+    qDebug() << "开始提取图片数据...";
+
+    try {
+        QImage image = m_archiveHandler->extractImage(index);
+
+        if (image.isNull()) {
+            qDebug() << "错误: 提取的图片为空";
+            return false;
+        }
+
+        qDebug() << "图片提取成功，尺寸:" << image.size();
+
+        // 转换为QPixmap
+        QPixmap tempPixmap = QPixmap::fromImage(image);
+        if (tempPixmap.isNull()) {
+            qDebug() << "错误: 从QImage转换QPixmap失败";
+            return false;
+        }
+
+        // 使用成员变量赋值
+        pixmap = tempPixmap;
+        originalPixmap = tempPixmap;
+
+        // 重置变换状态
+        rotationAngle = 0;
+        isHorizontallyFlipped = false;
+        isVerticallyFlipped = false;
+
+        // 设置当前索引
+        currentImageIndex = index;
+
+        qDebug() << "设置视图状态，当前类型:" << currentViewStateType;
+
+        // 根据当前视图状态设置显示
+        switch (currentViewStateType) {
+        case FitToWindow:
+            fitToWindow();
+            break;
+        case ActualSize:
+            actualSize();
+            break;
+        case ManualAdjustment:
+            // 保持当前的缩放和偏移
+            break;
+        }
+
+        qDebug() << "准备更新界面...";
+        update();
+        updateWindowTitle();
+
+        qDebug() << "压缩包图片加载完成";
+        return true;
+
+    } catch (const std::exception& e) {
+        qDebug() << "异常: " << e.what();
+        return false;
+    } catch (...) {
+        qDebug() << "未知异常";
+        return false;
+    }
+}
+
+// 添加压缩包加载信号处理
+void ImageWidget::onArchiveLoaded(bool success)
+{
+    if (success) {
+        qDebug() << "压缩包加载成功，包含" << m_archiveHandler->imageCount() << "张图片";
+    } else {
+        qDebug() << "压缩包加载失败";
+        m_isArchiveMode = false;
+        m_currentArchivePath.clear();
+    }
 }
 
 // 载入图片列表
@@ -623,71 +759,83 @@ bool ImageWidget::loadImageByIndex(int index, bool fromCache)
 }
 
 // 载入下一张
-void ImageWidget::loadNextImage()
-{
-    qDebug() << "=== loadNextImage 开始 ===";
-    qDebug() << "当前模式:" << (currentViewMode == SingleView ? "单张" : "缩略图");
-    qDebug() << "当前索引:" << currentImageIndex << "，图片总数:" << imageList.size();
+void ImageWidget::loadNextImage() {
 
-    if (imageList.isEmpty()) {
-        qDebug() << "图片列表为空，返回";
-        return;
-    }
+    if (m_isArchiveMode) {
+        // 压缩包模式
+        qDebug() << "压缩包模式，图片总数:" << m_archiveHandler->imageCount();
+        if (m_archiveHandler->imageCount() == 0) {
+            qDebug() << "压缩包为空，返回";
+            return;
+        }
 
-    int nextIndex = (currentImageIndex + 1) % imageList.size();
-    qDebug() << "计算出的下一个索引:" << nextIndex;
+        int nextIndex = (currentImageIndex + 1) % m_archiveHandler->imageCount();
+        qDebug() << "计算出的下一个索引:" << nextIndex;
 
-    if (currentViewMode == SingleView) {
-        qDebug() << "单张模式，加载图片";
-        loadImageByIndex(nextIndex, true);
+        if (currentViewMode == SingleView) {
+            qDebug() << "单张模式，加载压缩包图片";
+            loadArchiveImageByIndex(nextIndex);
+        }
     } else {
-        // 缩略图模式下，只更新索引和选中状态
-        qDebug() << "缩略图模式，更新选中状态";
-        currentImageIndex = nextIndex;
-        thumbnailWidget->setSelectedIndex(currentImageIndex);
-        thumbnailWidget->ensureVisible(currentImageIndex);
-        updateWindowTitle();
+        if (imageList.isEmpty()) {
+            qDebug() << "图片列表为空，返回";
+            return;
+        }
 
-        qDebug() << "更新后的当前索引:" << currentImageIndex;
+        int nextIndex = (currentImageIndex + 1) % imageList.size();
+
+        if (currentViewMode == SingleView) {
+            loadImageByIndex(nextIndex, true);
+
+        } else {
+            // 缩略图模式下，只更新索引和选中状态
+            currentImageIndex = nextIndex;
+            thumbnailWidget->setSelectedIndex(currentImageIndex);
+            thumbnailWidget->ensureVisible(currentImageIndex);
+            updateWindowTitle();
+        }
     }
-
-    qDebug() << "=== loadNextImage 结束 ===";
 }
-
 //载入前一张
-void ImageWidget::loadPreviousImage()
-{
-    qDebug() << "=== loadPreviousImage 开始 ===";
-    qDebug() << "当前模式:" << (currentViewMode == SingleView ? "单张" : "缩略图");
-    qDebug() << "当前索引:" << currentImageIndex << "，图片总数:" << imageList.size();
+void ImageWidget::loadPreviousImage() {
+    if (m_isArchiveMode) {
+        // 压缩包模式
+        qDebug() << "压缩包模式，图片总数:" << m_archiveHandler->imageCount();
+        if (m_archiveHandler->imageCount() == 0) {
+            qDebug() << "压缩包为空，返回";
+            return;
+        }
 
-    if (imageList.isEmpty()) {
-        qDebug() << "图片列表为空，返回";
-        return;
-    }
+        // 修复：正确计算前一张图片的索引
+        int prevIndex = (currentImageIndex - 1 + m_archiveHandler->imageCount()) % m_archiveHandler->imageCount();
+        qDebug() << "计算出的上一个索引:" << prevIndex;
 
-    int prevIndex = (currentImageIndex - 1 + imageList.size()) % imageList.size();
-    qDebug() << "计算出的上一个索引:" << prevIndex;
-
-    if (currentViewMode == SingleView) {
-        qDebug() << "单张模式，加载图片";
-        loadImageByIndex(prevIndex, true);
+        if (currentViewMode == SingleView) {
+            qDebug() << "单张模式，加载压缩包图片";
+            loadArchiveImageByIndex(prevIndex);
+        }
     } else {
-        // 缩略图模式下，只更新索引和选中状态
-        qDebug() << "缩略图模式，更新选中状态";
-        currentImageIndex = prevIndex;
-        thumbnailWidget->setSelectedIndex(currentImageIndex);
-        thumbnailWidget->ensureVisible(currentImageIndex);
-        updateWindowTitle();
+        // 普通文件模式
+        if (imageList.isEmpty()) {
+            qDebug() << "图片列表为空，返回";
+            return;
+        }
 
-        qDebug() << "更新后的当前索引:" << currentImageIndex;
+        int prevIndex = (currentImageIndex - 1 + imageList.size()) % imageList.size();
+
+        if (currentViewMode == SingleView) {
+            loadImageByIndex(prevIndex, true);
+        } else {
+            // 缩略图模式下，只更新索引和选中状态
+            currentImageIndex = prevIndex;
+            thumbnailWidget->setSelectedIndex(currentImageIndex);
+            thumbnailWidget->ensureVisible(currentImageIndex);
+            updateWindowTitle();
+        }
     }
-
-    qDebug() << "=== loadPreviousImage 结束 ===";
 }
 
-void ImageWidget::preloadAllImages()
-{
+void ImageWidget::preloadAllImages() {
     imageCache.clear();
 
     int loadedCount = 0;
@@ -944,8 +1092,7 @@ void ImageWidget::openFolder()
 }
 
 // 添加新的辅助函数来确保窗口可见
-void ImageWidget::ensureWindowVisible()
-{
+void ImageWidget::ensureWindowVisible() {
     // 如果窗口最小化，恢复显示
     if (isMinimized()) {
         showNormal();
@@ -960,38 +1107,50 @@ void ImageWidget::ensureWindowVisible()
     thumbnailWidget->setFocus();
 }
 
-
-void ImageWidget::openImage()
-{
+// 在openImage函数中修改文件过滤器
+void ImageWidget::openImage() {
     QString initialPath = currentConfig.lastOpenPath;
     if (initialPath.isEmpty() || !QDir(initialPath).exists()) {
-        initialPath = QStandardPaths::writableLocation(QStandardPaths::PicturesLocation);
+        initialPath =
+            QStandardPaths::writableLocation(QStandardPaths::PicturesLocation);
     }
 
-    QString fileName = QFileDialog::getOpenFileName(this, tr("打开图片"), initialPath,
-                                                    "Images (*.png *.jpg *.bmp *.jpeg *.webp *.gif *.tiff *.tif)");
+    QString fileName = QFileDialog::getOpenFileName(
+        this, tr("打开图片或压缩包"), initialPath,
+        "Images (*.png *.jpg *.bmp *.jpeg *.webp *.gif *.tiff *.tif);;"
+        "压缩包 (*.zip *.rar *.7z *.tar *.gz *.bz2);;"
+        "所有文件 (*.*)");
 
-    // QString fileName = QFileDialog::getOpenFileName(this, "打开图片",
-    //                    QStandardPaths::writableLocation(QStandardPaths::PicturesLocation),
-    //                     "Images (*.png *.jpg *.bmp *.jpeg *.webp *.gif *.tiff *.tif)");
     if (!fileName.isEmpty()) {
-
-        // 更新最后打开路径（使用图片所在文件夹）
+        // 更新最后打开路径（使用文件所在文件夹）
         QFileInfo fileInfo(fileName);
         currentConfig.lastOpenPath = fileInfo.absolutePath();
-        saveConfiguration(); // 立即保存配置
+        saveConfiguration();
 
-        loadImage(fileName);
-        switchToSingleView();
+        // 检查是否为压缩包
+        if (LibArchiveHandler::isSupportedArchive(fileName)) {
+            loadArchive(fileName);
+        } else {
+            loadImage(fileName);
+            switchToSingleView();
+        }
     }
 }
 
 // 修改 paintEvent 方法，正确处理透明背景
+// imagewidget.cpp - 修改 paintEvent 函数
 void ImageWidget::paintEvent(QPaintEvent *event)
 {
     if (currentViewMode == SingleView) {
         Q_UNUSED(event);
+
+        qDebug() << "=== 开始绘制 ===";
+
         QPainter painter(this);
+        if (!painter.isActive()) {
+            qDebug() << "错误: 无法创建有效的 QPainter";
+            return;
+        }
 
         // 如果启用了透明背景，使用透明颜色填充
         if (testAttribute(Qt::WA_TranslucentBackground)) {
@@ -1001,64 +1160,107 @@ void ImageWidget::paintEvent(QPaintEvent *event)
             painter.fillRect(rect(), Qt::black);
         }
 
+        // 安全检查：确保pixmap有效
         if (pixmap.isNull()) {
+            qDebug() << "pixmap为空，显示错误信息";
             painter.setPen(Qt::white);
-            painter.drawText(rect(), Qt::AlignCenter, tr("没有图片"));
+            painter.drawText(rect(), Qt::AlignCenter, tr("没有图片或图片加载失败"));
             return;
         }
 
-        QSize scaledSize = pixmap.size() * scaleFactor;
-        QPixmap scaledPixmap = pixmap.scaled(scaledSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        // 安全检查：确保scaleFactor有效
+        if (scaleFactor <= 0 || scaleFactor > 100) {
+            qDebug() << "scaleFactor无效，重置为1.0";
+            scaleFactor = 1.0;
+        }
 
-        QPointF offset((width() - scaledPixmap.width()) / 2 + panOffset.x(),
-                       (height() - scaledPixmap.height()) / 2 + panOffset.y());
+        QSize scaledSize;
+        try {
+            scaledSize = pixmap.size() * scaleFactor;
+        } catch (const std::exception& e) {
+            qDebug() << "计算缩放尺寸时发生异常:" << e.what();
+            scaledSize = pixmap.size();
+        } catch (...) {
+            qDebug() << "计算缩放尺寸时发生未知异常";
+            scaledSize = pixmap.size();
+        }
 
-        painter.drawPixmap(offset, scaledPixmap);
+        // 安全检查：确保缩放后的尺寸有效
+        if (scaledSize.width() <= 0 || scaledSize.height() <= 0) {
+            qDebug() << "缩放后尺寸无效，使用原始尺寸";
+            scaledSize = pixmap.size();
+        }
+
+        qDebug() << "绘制图片 - 原始尺寸:" << pixmap.size() << "缩放后:" << scaledSize;
+
+        QPixmap scaledPixmap;
+        try {
+            scaledPixmap = pixmap.scaled(scaledSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        } catch (const std::exception& e) {
+            qDebug() << "缩放图片时发生异常:" << e.what();
+            scaledPixmap = pixmap;
+        } catch (...) {
+            qDebug() << "缩放图片时发生未知异常";
+            scaledPixmap = pixmap;
+        }
+
+        // 安全检查：确保缩放后的pixmap有效
+        if (scaledPixmap.isNull()) {
+            qDebug() << "缩放后的pixmap无效，使用原始pixmap";
+            scaledPixmap = pixmap;
+        }
+
+        QPointF offset;
+        try {
+            offset = QPointF((width() - scaledPixmap.width()) / 2 + panOffset.x(),
+                             (height() - scaledPixmap.height()) / 2 + panOffset.y());
+        } catch (const std::exception& e) {
+            qDebug() << "计算偏移时发生异常:" << e.what();
+            offset = QPointF(0, 0);
+        } catch (...) {
+            qDebug() << "计算偏移时发生未知异常";
+            offset = QPointF(0, 0);
+        }
+
+        try {
+            painter.drawPixmap(offset, scaledPixmap);
+            qDebug() << "图片绘制完成";
+        } catch (const std::exception& e) {
+            qDebug() << "绘制图片时发生异常:" << e.what();
+            painter.setPen(Qt::white);
+            painter.drawText(rect(), Qt::AlignCenter, tr("绘制图片时发生错误"));
+        } catch (...) {
+            qDebug() << "绘制图片时发生未知异常";
+            painter.setPen(Qt::white);
+            painter.drawText(rect(), Qt::AlignCenter, tr("绘制图片时发生未知错误"));
+        }
 
         // 添加变换状态提示
         if (isTransformed()) {
-            painter.setPen(Qt::yellow);
-            painter.setFont(QFont("Arial", 10));
+            try {
+                painter.setPen(Qt::yellow);
+                painter.setFont(QFont("Arial", 10));
 
-            QString transformInfo;
-            if (rotationAngle != 0) {
-                transformInfo += QString("旋转: %1° ").arg(rotationAngle);
-            }
-            if (isHorizontallyFlipped) {
-                transformInfo += "水平镜像 ";
-            }
-            if (isVerticallyFlipped) {
-                transformInfo += "垂直镜像 ";
-            }
+                QString transformInfo;
+                if (rotationAngle != 0) {
+                    transformInfo += QString("旋转: %1° ").arg(rotationAngle);
+                }
+                if (isHorizontallyFlipped) {
+                    transformInfo += "水平镜像 ";
+                }
+                if (isVerticallyFlipped) {
+                    transformInfo += "垂直镜像 ";
+                }
 
-            if (!transformInfo.isEmpty()) {
-                painter.drawText(10, 30, transformInfo.trimmed());
+                if (!transformInfo.isEmpty()) {
+                    painter.drawText(10, 30, transformInfo.trimmed());
+                }
+            } catch (...) {
+                // 忽略变换信息绘制的错误
             }
         }
 
-        // 添加左右箭头提示（半透明，只在图片较大时显示）
-        if (scaledSize.width() > 600 && scaledSize.height() > 600) {
-            painter.setRenderHint(QPainter::Antialiasing);
-            painter.setOpacity(0.5); // 半透明
-
-            // 左箭头
-            QPainterPath leftArrow;
-            leftArrow.moveTo(offset.x() + 20, offset.y() + scaledSize.height() / 2);
-            leftArrow.lineTo(offset.x() + 40, offset.y() + scaledSize.height() / 2 - 15);
-            leftArrow.lineTo(offset.x() + 40, offset.y() + scaledSize.height() / 2 + 15);
-            leftArrow.closeSubpath();
-            painter.fillPath(leftArrow, Qt::white);
-
-            // 右箭头
-            QPainterPath rightArrow;
-            rightArrow.moveTo(offset.x() + scaledSize.width() - 20, offset.y() + scaledSize.height() / 2);
-            rightArrow.lineTo(offset.x() + scaledSize.width() - 40, offset.y() + scaledSize.height() / 2 - 15);
-            rightArrow.lineTo(offset.x() + scaledSize.width() - 40, offset.y() + scaledSize.height() / 2 + 15);
-            rightArrow.closeSubpath();
-            painter.fillPath(rightArrow, Qt::white);
-
-            painter.setOpacity(1.0); // 恢复不透明
-        }
+        qDebug() << "=== 绘制结束 ===";
     }
 }
 
@@ -1270,9 +1472,11 @@ void ImageWidget::showContextMenu(const QPoint &globalPos)
 
     }   else    {
         // 缩略图模式下的菜单
-        contextMenu.addAction(tr("删除选中图片 (Del)"), this, &ImageWidget::deleteSelectedThumbnail);
-        //contextMenu.addAction("永久删除", this, &ImageWidget::permanentlyDeleteCurrentImage);
-        contextMenu.addSeparator();
+        int selectedIndex = thumbnailWidget->getSelectedIndex();
+        if(selectedIndex>=0 && selectedIndex < imageList.size()){
+            contextMenu.addAction(tr("删除选中 (Del)"), this, &ImageWidget::deleteSelectedThumbnail);
+            contextMenu.addSeparator();
+        }
     }
 
     //打开文件 整合
@@ -2557,3 +2761,64 @@ bool ImageWidget::isTransformed() const
     return rotationAngle != 0 || isHorizontallyFlipped || isVerticallyFlipped;
 }
 
+bool ImageWidget::loadArchive(const QString &archivePath)
+{
+    qDebug() << "=== 开始加载压缩包 ===";
+    qDebug() << "路径:" << archivePath;
+
+    if (!LibArchiveHandler::isSupportedArchive(archivePath)) {
+        qDebug() << "不支持的压缩包格式";
+        QMessageBox::warning(this, tr("错误"),
+                             tr("不支持的压缩包格式: %1").arg(archivePath));
+        return false;
+    }
+
+    // 先重置状态
+    m_isArchiveMode = false;
+    m_currentArchivePath.clear();
+
+    qDebug() << "调用archiveHandler加载压缩包...";
+    if (m_archiveHandler->loadArchive(archivePath)) {
+        qDebug() << "压缩包加载成功，图片数量:" << m_archiveHandler->imageCount();
+
+        m_isArchiveMode = true;
+        m_currentArchivePath = archivePath;
+
+        // 清空普通图片列表
+        imageList.clear();
+        currentImageIndex = -1;
+
+        // 如果有图片，直接切换到单张视图并显示第一张
+        if (m_archiveHandler->imageCount() > 0) {
+            qDebug() << "压缩包中有图片，直接切换到单张视图...";
+
+            // 先切换到单张视图
+            currentViewMode = SingleView;
+            scrollArea->hide();
+
+            // 然后加载第一张图片
+            qDebug() << "准备加载第一张图片...";
+            if (loadArchiveImageByIndex(0)) {
+                qDebug() << "第一张图片加载成功";
+                return true;
+            } else {
+                qDebug() << "第一张图片加载失败，回退到缩略图模式";
+                // 如果加载失败，切换到缩略图模式显示文件列表
+                switchToThumbnailViewForArchive();
+                return false;
+            }
+        } else {
+            qDebug() << "压缩包中没有找到图片";
+            QMessageBox::information(this, tr("提示"),
+                                     tr("压缩包中没有找到支持的图片文件"));
+            // 切换到缩略图模式显示空状态
+            switchToThumbnailViewForArchive();
+            return false;
+        }
+    } else {
+        qDebug() << "压缩包加载失败";
+        QMessageBox::warning(this, tr("错误"),
+                             tr("无法加载压缩包: %1\n可能是文件损坏或不支持的格式").arg(archivePath));
+        return false;
+    }
+}

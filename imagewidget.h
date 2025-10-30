@@ -15,6 +15,8 @@
 #include "ConfigManager.h"  // 添加配置管理器头文件
 #include "canvascontrolpanel.h"  // 添加控制面板头文件
 
+#include "libarchivehandler.h"
+
 class ImageWidget : public QWidget
 {
     Q_OBJECT
@@ -259,6 +261,24 @@ private:
     bool isVerticallyFlipped;    // 垂直镜像
     QPixmap originalPixmap;      // 存储原始图片，用于重置变换
 
+
+
+
+private slots:
+    // 压缩包相关槽函数
+    void onArchiveLoaded(bool success);
+
+    // 压缩包相关函数
+    bool loadArchive(const QString &archivePath);
+    bool loadArchiveImageByIndex(int index);
+
+private:
+    // 压缩包相关
+    LibArchiveHandler *m_archiveHandler;
+    bool m_isArchiveMode;
+    QString m_currentArchivePath;
+
+    void switchToThumbnailViewForArchive();
 };
 
 #endif // IMAGEWIDGET_H
