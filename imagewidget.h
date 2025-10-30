@@ -279,6 +279,7 @@ private:
     QString m_currentArchivePath;
 
     void switchToThumbnailViewForArchive();
+    void openSelectedImage();
 };
 
 #endif // IMAGEWIDGET_H

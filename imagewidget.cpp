@@ -1429,7 +1429,7 @@ void ImageWidget::showContextMenu(const QPoint &globalPos)
         );
 
     if (currentViewMode == SingleView) {
-        contextMenu.addAction(tr("返回缩略图模式"), this, &ImageWidget::switchToThumbnailView);
+        contextMenu.addAction(tr("返回缩略图模式(Enter/Esc)"), this, &ImageWidget::switchToThumbnailView);
         contextMenu.addSeparator();
 
         // 添加切换提示
@@ -1472,9 +1472,14 @@ void ImageWidget::showContextMenu(const QPoint &globalPos)
 
     }   else    {
         // 缩略图模式下的菜单
+
         int selectedIndex = thumbnailWidget->getSelectedIndex();
         if(selectedIndex>=0 && selectedIndex < imageList.size()){
-            contextMenu.addAction(tr("删除选中 (Del)"), this, &ImageWidget::deleteSelectedThumbnail);
+
+            contextMenu.addAction(tr("打开图片(Enter)"), this, &ImageWidget::openSelectedImage);
+            contextMenu.addSeparator();
+
+            contextMenu.addAction(tr("删除选中图片 (Del)"), this, &ImageWidget::deleteSelectedThumbnail);
             contextMenu.addSeparator();
         }
     }
@@ -1628,6 +1633,15 @@ void ImageWidget::showContextMenu(const QPoint &globalPos)
     contextMenu.addAction(tr("退出"), this, &QWidget::close);
 
     contextMenu.exec(globalPos);
+}
+
+void ImageWidget::openSelectedImage()
+{
+    int selectedIndex = thumbnailWidget->getSelectedIndex();
+    if(selectedIndex >= 0 && selectedIndex < imageList.size()){
+        // 触发与双击缩略图相同的行为
+        thumbnailWidget->thumbnailClicked(selectedIndex);
+    }
 }
 
 // 设置窗口透明度
