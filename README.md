@@ -3,6 +3,7 @@ PictureView 由QT6框架+第三方库OpenCV图像解码 for windows。
 沉浸大图模式，幻灯浏览，缩略图浏览；还可以粘贴图片，以及投影式画布模式。
 代码设计校准：deepseek AI 图标创意：豆包AI。牛马：berylok
 
+v1.4.0.0支持ZIP压缩包
 v1.3.8.1补齐一些功能及修复
 v1.3投影画布支持
 v1.2缩略图支持
