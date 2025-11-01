@@ -72,9 +72,13 @@ ConfigManager::Config ConfigManager::loadConfig()
 
     // 加载外观状态
     settings.beginGroup("Appearance");
-    config.transparentBackground = settings.value("TransparentBackground", config.transparentBackground).toBool();
-    config.titleBarVisible = settings.value("TitleBarVisible", config.titleBarVisible).toBool();
-    //config.alwaysOnTop = settings.value("AlwaysOnTop", config.alwaysOnTop).toBool();
+    config.transparentBackground =
+        settings.value("TransparentBackground", config.transparentBackground)
+                                       .toBool();
+    config.titleBarVisible =
+        settings.value("TitleBarVisible", config.titleBarVisible).toBool();
+    // config.alwaysOnTop = settings.value("AlwaysOnTop",
+    // config.alwaysOnTop).toBool();
     settings.endGroup();
 
     // 加载最近打开路径

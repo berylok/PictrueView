@@ -6,7 +6,7 @@
     <message>
         <location filename="../canvascontrolpanel.cpp" line="54"/>
         <source>退出画布</source>
-        <translation type="unfinished"></translation>
+        <translation>Exit the canvas</translation>
     </message>
 </context>
 <context>
@@ -14,79 +14,79 @@
     <message>
         <location filename="../imagewidget.cpp" line="804"/>
         <source>画布模式 - 按 Insert 或 ESC 退出</source>
-        <translation type="unfinished"></translation>
+        <translation>Canvas mode - Press Insert or ESC to exit</translation>
     </message>
     <message>
         <location filename="../imagewidget.cpp" line="811"/>
         <source>%1 (%2/%3) - %4模式</source>
-        <translation type="unfinished"></translation>
+        <translation>%1 (%2/%3) - %4 mode</translation>
     </message>
     <message>
         <location filename="../imagewidget.cpp" line="815"/>
         <source>单张</source>
-        <translation type="unfinished"></translation>
+        <translation>Single sheet</translation>
     </message>
     <message>
         <location filename="../imagewidget.cpp" line="815"/>
         <source>缩略图</source>
-        <translation type="unfinished"></translation>
+        <translation>thumbnail</translation>
     </message>
     <message>
         <location filename="../imagewidget.cpp" line="817"/>
         <source>剪贴板图片</source>
-        <translation type="unfinished"></translation>
+        <translation>Clipboard image</translation>
     </message>
     <message>
         <location filename="../imagewidget.cpp" line="819"/>
         <source>图片查看器 - 缩略图模式</source>
-        <translation type="unfinished"></translation>
+        <translation>Image Viewer - Thumbnail Mode</translation>
     </message>
     <message>
         <location filename="../imagewidget.cpp" line="932"/>
         <source>选择图片文件夹</source>
-        <translation type="unfinished"></translation>
+        <translation>Select image folder</translation>
     </message>
     <message>
         <location filename="../imagewidget.cpp" line="991"/>
         <location filename="../imagewidget.cpp" line="2118"/>
         <source>打开图片</source>
-        <translation type="unfinished"></translation>
+        <translation>Open the picture</translation>
     </message>
     <message>
         <location filename="../imagewidget.cpp" line="1029"/>
         <source>没有图片</source>
-        <translation type="unfinished"></translation>
+        <translation>No picture</translation>
     </message>
     <message>
         <location filename="../imagewidget.cpp" line="1193"/>
         <location filename="../imagewidget.cpp" line="2125"/>
         <source>保存图片</source>
-        <translation type="unfinished"></translation>
+        <translation>Save the picture</translation>
     </message>
     <message>
         <location filename="../imagewidget.cpp" line="1216"/>
-        <source>返回缩略图模式</source>
-        <translation type="unfinished"></translation>
+        <source>返回缩略图(Enter/Esc)</source>
+        <translation>Return thumbnail mode</translation>
     </message>
     <message>
         <location filename="../imagewidget.cpp" line="1220"/>
         <source>上一张 (←)</source>
-        <translation type="unfinished"></translation>
+        <translation>Previous (←)</translation>
     </message>
     <message>
         <location filename="../imagewidget.cpp" line="1221"/>
         <source>下一张 (→)</source>
-        <translation type="unfinished"></translation>
+        <translation>Next (→)</translation>
     </message>
     <message>
         <location filename="../imagewidget.cpp" line="1224"/>
         <source>合适大小 (↑)</source>
-        <translation type="unfinished"></translation>
+        <translation>Appropriate size (↑)</translation>
     </message>
     <message>
         <location filename="../imagewidget.cpp" line="1225"/>
         <source>实际大小 (↓)</source>
-        <translation type="unfinished"></translation>
+        <translation>Actual size (↓)</translation>
     </message>
     <message>
         <location filename="../imagewidget.cpp" line="1228"/>
@@ -579,7 +579,15 @@
 拖拽图片文件夹到此窗口或右键选择打开文件夹
 
 F1 查看帮助 或右键弹出菜单使用</source>
-        <translation type="unfinished"></translation>
+        <translation>Welcome to the Image Viewer!
+Usage Instructions:
+• Press Ctrl+O to open a folder and browse images
+• Press Ctrl+Shift+O to open a single image
+• Press F1 to view detailed usage instructions
+Wish you a pleasant experience!
+No image files
+Drag and drop an image folder into this window or right-click to select and open a folder
+Press F1 for help or right-click to bring up the menu</translation>
     </message>
 </context>
 <context>

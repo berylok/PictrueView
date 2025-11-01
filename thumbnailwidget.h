@@ -64,6 +64,11 @@ private:
 public:
     static void clearThumbnailCacheForImage(const QString &imagePath);
     void ensureVisible(int index);
+
+private:
+    bool isArchiveFile(const QString &fileName) const;
+    QPixmap createArchiveIcon() const;
+
 };
 
 #endif // THUMBNAILWIDGET_H

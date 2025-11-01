@@ -1,48 +1,48 @@
-QT += core gui widgets concurrent quick
+QT += core gui widgets concurrent
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 CONFIG += c++11
 
+# 添加 libarchive 库
+# 根据你的 vcpkg 安装路径调整
+VCPKG_ROOT = $$(VCPKG_ROOT)
+isEmpty(VCPKG_ROOT) {
+    VCPKG_ROOT = j:/vcpkg  # 修改为你的 vcpkg 路径
+}
+
+INCLUDEPATH += $$VCPKG_ROOT/installed/x64-windows/include
+LIBS += -L$$VCPKG_ROOT/installed/x64-windows/lib -larchive
+
+# 如果是 Linux/macOS，使用：
+# INCLUDEPATH += $$VCPKG_ROOT/installed/x64-linux/include
+# LIBS += -L$$VCPKG_ROOT/installed/x64-linux/lib -larchive
+
 SOURCES += main.cpp \
+    archivehandler.cpp \
     canvascontrolpanel.cpp \
     configmanager.cpp \
-    imagewidget.cpp \
-    libarchivehandler.cpp \
-    libarchiveimageprovider.cpp \
+    imagewidget_archive.cpp \
+    imagewidget_canvas.cpp \
+    imagewidget_config.cpp \
+    imagewidget_core.cpp \
+    imagewidget_file.cpp \
+    imagewidget_fileops.cpp \
+    imagewidget_help.cpp \
+    imagewidget_keyboard.cpp \
+    imagewidget_menu.cpp \
+    imagewidget_mouse.cpp \
+    imagewidget_shortcuts.cpp \
+    imagewidget_slideshow.cpp \
+    imagewidget_transform.cpp \
+    imagewidget_view.cpp \
+    imagewidget_viewmode.cpp \
     thumbnailwidget.cpp
 
 HEADERS += \
+    archivehandler.h \
     canvascontrolpanel.h \
     configmanager.h \
     imagewidget.h \
-    libarchivehandler.h \
-    libarchiveimageprovider.h \
     thumbnailwidget.h
-
-# 读取压缩包功能所需依赖，使用vcpkg安装的libarchive
-# 设置vcpkg根目录 - 根据您的实际路径调整
-# 读取压缩包功能所需依赖
-VCPKG_ROOT = $$(VCPKG_ROOT)
-isEmpty(VCPKG_ROOT) {
-    VCPKG_ROOT = J:/vcpkg
-}
-
-VCPKG_TARGET_TRIPLET = x64-windows
-
-INCLUDEPATH += $${VCPKG_ROOT}/installed/$${VCPKG_TARGET_TRIPLET}/include
-LIBS += -L$${VCPKG_ROOT}/installed/$${VCPKG_TARGET_TRIPLET}/lib
-
-# 使用动态链接，链接 archive.lib
-LIBS += -larchive
-
-# Windows 依赖库
-win32 {
-    LIBS += -lbcrypt
-    LIBS += -luser32
-    LIBS += -lole32
-    LIBS += -lws2_32
-    LIBS += -ladvapi32
-    LIBS += -lshlwapi
-}
 
 # 资源文件
 RESOURCES += \
@@ -60,7 +60,7 @@ DEFAULT_LANG = zh_CN
 RC_ICONS = icons/PictureView.ico
 
 # 基本应用信息
-VERSION = 1.3.8.1
+VERSION = 1.4.0.0
 QMAKE_TARGET_COMPANY = "berylok"
 QMAKE_TARGET_DESCRIPTION = "berylok app"
 QMAKE_TARGET_COPYRIGHT = "Copyright @ 2025 berylok"

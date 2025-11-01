@@ -63,7 +63,8 @@ void CanvasControlPanel::mousePressEvent(QMouseEvent *event)
         } else {
             // 点击非按钮区域，开始拖拽
             isDragging = true;
-            dragStartPosition = event->globalPosition().toPoint() - frameGeometry().topLeft();
+            dragStartPosition =
+                event->globalPosition().toPoint() - frameGeometry().topLeft();
             setCursor(Qt::ClosedHandCursor);
         }
     }

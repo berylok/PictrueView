@@ -15,7 +15,7 @@
 #include "ConfigManager.h"  // 添加配置管理器头文件
 #include "canvascontrolpanel.h"  // 添加控制面板头文件
 
-#include "libarchivehandler.h"
+#include "archivehandler.h"
 
 class ImageWidget : public QWidget
 {
@@ -45,7 +45,9 @@ public:
     void updateWindowTitle();
     QString getShortPathName(const QString &longPath);
     void logMessage(const QString &message);
-    void registerFileAssociation(const QString &fileExtension, const QString &fileTypeName, const QString &openCommand);
+    void registerFileAssociation(const QString &fileExtension,
+                                 const QString &fileTypeName,
+                                 const QString &openCommand);
     void switchToSingleView(int index = -1);
     void switchToThumbnailView();
     void openFolder();
@@ -180,13 +182,9 @@ private:
     QAction *toggleAlwaysOnTopAction;
     QAction *toggleTransparentBackgroundAction;
 
-
-
-
-
-    void drawNavigationArrows(QPainter &painter, const QPointF &offset, const QSize &scaledSize);
+    void drawNavigationArrows(QPainter &painter, const QPointF &offset,
+                              const QSize &scaledSize);
     bool shouldShowNavigationArrows(const QSize &scaledSize);
-
 
     // 窗口透明度控制
     double m_windowOpacity;
@@ -261,24 +259,34 @@ private:
     bool isVerticallyFlipped;    // 垂直镜像
     QPixmap originalPixmap;      // 存储原始图片，用于重置变换
 
+    // 压缩包处理
+    // 压缩包处理
+    ArchiveHandler archiveHandler;
+    bool isArchiveMode;
+    QString currentArchivePath;
+    QMap<QString, QPixmap> archiveImageCache;  // 压缩包图片缓存
 
+    // 压缩包相关方法
+    bool openArchive(const QString &filePath);
+    void closeArchive();
+    void loadArchiveImageList();
+    bool loadImageFromArchive(const QString &filePath);
 
+public:
+    QPixmap getArchiveThumbnail(const QString &archivePath);
 
-private slots:
-    // 压缩包相关槽函数
-    void onArchiveLoaded(bool success);
-
-    // 压缩包相关函数
-    bool loadArchive(const QString &archivePath);
-    bool loadArchiveImageByIndex(int index);
+public slots:
+    // 返回上级目录（退出压缩包模式）
+    void exitArchiveMode();
 
 private:
-    // 压缩包相关
-    LibArchiveHandler *m_archiveHandler;
-    bool m_isArchiveMode;
-    QString m_currentArchivePath;
+    bool isArchiveFile(const QString &fileName) const;
 
-    void switchToThumbnailViewForArchive();
+    // 状态保存变量（用于退出压缩包模式时恢复状态）
+    QDir previousDir;
+    QStringList previousImageList;
+    int previousImageIndex;
+    ViewMode previousViewMode;
     void openSelectedImage();
 };
 

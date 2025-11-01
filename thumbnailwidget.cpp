@@ -6,6 +6,7 @@
 #include <QFutureWatcher>
 #include <QtConcurrent>
 #include <imagewidget.h>
+#include <QPainterPath>
 
 // 初始化静态成员变量
 QMap<QString, QPixmap> ThumbnailWidget::thumbnailCache;
@@ -30,8 +31,51 @@ ThumbnailWidget::~ThumbnailWidget()
     stopLoading();
 }
 
+bool ThumbnailWidget::isArchiveFile(const QString &fileName) const
+{
+    QString lowerName = fileName.toLower();
+    return (lowerName.endsWith(".zip") || lowerName.endsWith(".rar") ||
+            lowerName.endsWith(".7z") || lowerName.endsWith(".tar") ||
+            lowerName.endsWith(".gz") || lowerName.endsWith(".bz2"));
+}
+
+QPixmap ThumbnailWidget::createArchiveIcon() const
+{
+    QPixmap icon(thumbnailSize);
+    icon.fill(QColor(70, 130, 180)); // 钢蓝色背景
+
+    QPainter painter(&icon);
+    painter.setRenderHint(QPainter::Antialiasing);
+
+    // 绘制压缩包图标
+    painter.setPen(QPen(Qt::white, 2));
+    painter.setBrush(QColor(100, 160, 210));
+
+    // 绘制文件夹形状
+    QPainterPath path;
+    path.moveTo(20, 40);
+    path.lineTo(60, 40);
+    path.lineTo(70, 60);
+    path.lineTo(30, 60);
+    path.closeSubpath();
+
+    painter.drawPath(path);
+
+    // 绘制拉链
+    painter.setPen(QPen(Qt::white, 3));
+    painter.drawLine(45, 40, 45, 60);
+
+    painter.setPen(Qt::white);
+    painter.setFont(QFont("Arial", 10, QFont::Bold));
+    painter.drawText(icon.rect(), Qt::AlignCenter, "ZIP");
+
+    return icon;
+}
+
 void ThumbnailWidget::setImageList(const QStringList &list, const QDir &dir)
 {
+    qDebug() << "设置缩略图列表，数量:" << list.size();
+
     // 停止之前的加载
     stopLoading();
 
@@ -49,12 +93,22 @@ void ThumbnailWidget::setImageList(const QStringList &list, const QDir &dir)
     QStringList pathsToLoad;
     {
         QMutexLocker locker(&cacheMutex);
-        for (const QString &fileName : imageList) {
-            QString imagePath = currentDir.absoluteFilePath(fileName);
-            if (!thumbnailCache.contains(imagePath)) {
-                pathsToLoad.append(imagePath);
+        for (const QString &filePath : imageList) {
+            QString cacheKey;
+            if (filePath.contains("|")) {
+                // 压缩包文件：直接使用完整路径作为缓存键
+                cacheKey = filePath;
+            } else {
+                // 普通文件：使用绝对路径作为缓存键
+                cacheKey = currentDir.absoluteFilePath(filePath);
+            }
+
+            if (!thumbnailCache.contains(cacheKey)) {
+                pathsToLoad.append(filePath);
+                qDebug() << "需要加载缩略图:" << filePath << "缓存键:" << cacheKey;
             } else {
                 loadedCount++;
+                qDebug() << "缩略图已在缓存中:" << filePath << "缓存键:" << cacheKey;
             }
         }
     }
@@ -62,18 +116,24 @@ void ThumbnailWidget::setImageList(const QStringList &list, const QDir &dir)
     // 如果有需要加载的图片
     if (!pathsToLoad.isEmpty()) {
         isLoading = true;
+        qDebug() << "开始异步加载" << pathsToLoad.size() << "个缩略图";
 
         // 使用 QtConcurrent 异步加载缩略图
-        QFuture<QPixmap> future = QtConcurrent::mapped(pathsToLoad, [this](const QString &path) {
+        QFuture<QPixmap> future =
+            QtConcurrent::mapped(pathsToLoad, [this](const QString &path) {
             return loadThumbnail(path);
         });
 
         // 创建监视器来跟踪进度
         futureWatcher = new QFutureWatcher<QPixmap>(this);
-        connect(futureWatcher, &QFutureWatcher<QPixmap>::resultReadyAt, this, &ThumbnailWidget::updateThumbnails);
-        connect(futureWatcher, &QFutureWatcher<QPixmap>::finished, this, [this]() {
-            isLoading = false;
-            update();
+        connect(futureWatcher, &QFutureWatcher<QPixmap>::resultReadyAt, this,
+                &ThumbnailWidget::updateThumbnails);
+        connect(futureWatcher, &QFutureWatcher<QPixmap>::finished, this,
+                [this]() {
+                    isLoading = false;
+            qDebug() << "缩略图加载完成，总共加载:" << loadedCount << "/"
+                             << totalCount;
+                    update(); // 确保最后更新一次界面
         });
 
         futureWatcher->setFuture(future);
@@ -81,21 +141,66 @@ void ThumbnailWidget::setImageList(const QStringList &list, const QDir &dir)
         // 所有图片都在缓存中，直接更新界面
         emit loadingProgress(loadedCount, totalCount);
         update();
+        qDebug() << "所有缩略图已在缓存中，直接更新界面";
     }
 }
 
 QPixmap ThumbnailWidget::loadThumbnail(const QString &path)
 {
-    QPixmap original;
-    if (original.load(path)) {
-        QPixmap thumbnail = original.scaled(thumbnailSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    qDebug() << "开始加载缩略图:" << path;
 
-        // 将缩略图添加到缓存
+    // 检查是否是压缩包内的文件（路径包含"|"分隔符）
+    if (path.contains("|")) {
+        qDebug() << "检测到压缩包内文件路径:" << path;
+
+        // 压缩包内的文件，需要从主窗口获取
+        ImageWidget *parentWidget = qobject_cast<ImageWidget*>(this->parent());
+        if (parentWidget) {
+            // 直接调用父窗口的方法获取缩略图
+            QPixmap thumbnail = parentWidget->getArchiveThumbnail(path);
+            if (!thumbnail.isNull()) {
+                qDebug() << "成功获取压缩包缩略图，尺寸:" << thumbnail.size();
+                QMutexLocker locker(&cacheMutex);
+                thumbnailCache.insert(path, thumbnail);
+                return thumbnail;
+            } else {
+                qDebug() << "获取压缩包缩略图失败，返回空缩略图";
+            }
+        } else {
+            qDebug() << "无法获取父窗口，无法加载压缩包缩略图";
+        }
+        return QPixmap();
+    }
+
+    // 普通文件加载逻辑
+    QPixmap original;
+
+    // 构建完整文件路径
+    QString fullPath = currentDir.absoluteFilePath(path);
+    qDebug() << "加载普通文件缩略图，完整路径:" << fullPath;
+
+    // 首先检查文件是否存在
+    QFileInfo fileInfo(fullPath);
+    if (!fileInfo.exists()) {
+        qDebug() << "文件不存在:" << fullPath;
+        return QPixmap();
+    }
+
+    if (original.load(fullPath)) {
+        QPixmap thumbnail = original.scaled(thumbnailSize, Qt::KeepAspectRatio,
+                                            Qt::SmoothTransformation);
+
+        qDebug() << "成功加载普通文件缩略图，路径:" << fullPath
+                 << "原始尺寸:" << original.size()
+                 << "缩略图尺寸:" << thumbnail.size();
+
         QMutexLocker locker(&cacheMutex);
-        thumbnailCache.insert(path, thumbnail);
+        thumbnailCache.insert(fullPath, thumbnail); // 使用完整路径作为缓存键
 
         return thumbnail;
     }
+
+    qDebug() << "加载缩略图失败:" << fullPath;
     return QPixmap();
 }
 
@@ -153,7 +258,8 @@ void ThumbnailWidget::ensureVisible(int index)
     if (index < 0 || index >= imageList.size()) return;
 
     int maxWidth = width();
-    int itemsPerRow = qMax(1, (maxWidth - thumbnailSpacing) / (thumbnailSize.width() + thumbnailSpacing));
+    int itemsPerRow = qMax(1, (maxWidth - thumbnailSpacing) /
+                                  (thumbnailSize.width() + thumbnailSpacing));
 
     int row = index / itemsPerRow;
     int col = index % itemsPerRow;
@@ -176,72 +282,125 @@ void ThumbnailWidget::paintEvent(QPaintEvent *event)
     if (imageList.isEmpty()) {
         painter.setPen(Qt::white);
         painter.drawText(rect(), Qt::AlignCenter,tr("欢迎使用图片查看器！\n\n"
-                                                  "使用方法：\n"
-                                                  "• 按 Ctrl+O 打开文件夹浏览图片\n"
-                                                  "• 按 Ctrl+Shift+O 打开单张图片\n"
-                                                  "• 按 F1 查看详细使用说明\n\n"
-                                                  "祝您使用愉快！"
-                                                  "\n"
-                                                  "\n"
-                         "没有图片文件\n拖拽图片文件夹到此窗口或右键选择打开文件夹"
-                                                  "\n"
-                                                  "\n"
-                         "F1 查看帮助 或右键弹出菜单使用"));
+                                                     "使用方法：\n"
+                                                     "• 按 Ctrl+O 打开文件夹浏览图片\n"
+                                                     "• 按 Ctrl+Shift+O 打开单张图片\n"
+                                                     "• 按 F1 查看详细使用说明\n\n"
+                                                     "祝您使用愉快！"
+                                                     "\n"
+                                                     "\n"
+                                                     "没有图片文件\n拖拽图片文件夹到此窗口或右键选择打开文件夹"
+                                                     "\n"
+                                                     "\n"
+                                                     "F1 查看帮助 或右键弹出菜单使用"));
         return;
     }
 
     int x = thumbnailSpacing;
     int y = thumbnailSpacing;
     int maxWidth = width();
-    int itemsPerRow = qMax(1, (maxWidth - thumbnailSpacing) / (thumbnailSize.width() + thumbnailSpacing));
+    int itemsPerRow = qMax(1, (maxWidth - thumbnailSpacing) /
+                                  (thumbnailSize.width() + thumbnailSpacing));
 
     QMutexLocker locker(&cacheMutex);
 
     for (int i = 0; i < imageList.size(); ++i) {
-        QString imagePath = currentDir.absoluteFilePath(imageList.at(i));
+        QString fileName = imageList.at(i);
+
+        // 统一构建缓存键的逻辑
+        QString cacheKey;
+        if (fileName.contains("|")) {
+            // 压缩包文件：直接使用完整路径作为缓存键
+            cacheKey = fileName;
+        } else {
+            // 普通文件：使用绝对路径作为缓存键
+            cacheKey = currentDir.absoluteFilePath(fileName);
+        }
 
         // 计算当前缩略图的位置
         int row = i / itemsPerRow;
         int col = i % itemsPerRow;
-        int currentX = thumbnailSpacing + col * (thumbnailSize.width() + thumbnailSpacing);
-        int currentY = thumbnailSpacing + row * (thumbnailSize.height() + thumbnailSpacing + 25);
+        int currentX =
+            thumbnailSpacing + col * (thumbnailSize.width() + thumbnailSpacing);
+        int currentY = thumbnailSpacing +
+                       row * (thumbnailSize.height() + thumbnailSpacing + 25);
 
-        if (thumbnailCache.contains(imagePath)) {
-            QPixmap thumbnail = thumbnailCache.value(imagePath);
-
-            int thumbX = currentX + (thumbnailSize.width() - thumbnail.width()) / 2;
-            int thumbY = currentY + (thumbnailSize.height() - thumbnail.height()) / 2;
-
-            QRect thumbRect(thumbX, thumbY, thumbnail.width(), thumbnail.height());
-            QRect borderRect(currentX, currentY, thumbnailSize.width(), thumbnailSize.height());
+        // 检查是否是压缩包文件
+        if (isArchiveFile(fileName) && !fileName.contains("|")) {
+            // 绘制压缩包缩略图（仅对顶级压缩包文件）
+            QRect borderRect(currentX, currentY, thumbnailSize.width(),
+                             thumbnailSize.height());
 
             if (i == selectedIndex) {
-                // 绘制选中状态
-                painter.fillRect(borderRect.adjusted(-2, -2, 2, 2), QColor(0, 120, 215));
+                painter.fillRect(borderRect.adjusted(-2, -2, 2, 2),
+                                 QColor(0, 120, 215));
+            }
+
+            QPixmap archiveIcon = createArchiveIcon();
+            painter.drawPixmap(borderRect, archiveIcon);
+
+            QRect textRect(currentX, currentY + thumbnailSize.height(),
+                           thumbnailSize.width(), 20);
+            painter.setPen(Qt::white);
+            painter.drawText(textRect,
+                             Qt::AlignCenter | Qt::TextElideMode::ElideRight,
+                             fileName);
+
+        } else if (thumbnailCache.contains(cacheKey)) {
+            // 普通图片或压缩包内图片的原有逻辑
+            QPixmap thumbnail = thumbnailCache.value(cacheKey);
+
+            int thumbX =
+                currentX + (thumbnailSize.width() - thumbnail.width()) / 2;
+            int thumbY =
+                currentY + (thumbnailSize.height() - thumbnail.height()) / 2;
+
+            QRect thumbRect(thumbX, thumbY, thumbnail.width(),
+                            thumbnail.height());
+            QRect borderRect(currentX, currentY, thumbnailSize.width(),
+                             thumbnailSize.height());
+
+            if (i == selectedIndex) {
+                painter.fillRect(borderRect.adjusted(-2, -2, 2, 2),
+                                 QColor(0, 120, 215));
             }
 
             painter.drawPixmap(thumbRect, thumbnail);
 
-            QRect textRect(currentX, currentY + thumbnailSize.height(), thumbnailSize.width(), 20);
-            QString fileName = QFileInfo(imageList.at(i)).fileName();
+            QRect textRect(currentX, currentY + thumbnailSize.height(),
+                           thumbnailSize.width(), 20);
+            QString displayName = QFileInfo(fileName).fileName();
             painter.setPen(Qt::white);
-            painter.drawText(textRect, Qt::AlignCenter | Qt::TextElideMode::ElideRight, fileName);
+            painter.drawText(textRect,
+                             Qt::AlignCenter | Qt::TextElideMode::ElideRight,
+                             displayName);
         } else {
-            QRect borderRect(currentX, currentY, thumbnailSize.width(), thumbnailSize.height());
+            // 加载中的图片
+            QRect borderRect(currentX, currentY, thumbnailSize.width(),
+                             thumbnailSize.height());
             painter.fillRect(borderRect, QColor(50, 50, 50));
             painter.setPen(Qt::white);
-            painter.drawText(borderRect, Qt::AlignCenter, "加载中...");
+            painter.drawText(borderRect, Qt::AlignCenter, tr("加载中..."));
+
+            QRect textRect(currentX, currentY + thumbnailSize.height(),
+                           thumbnailSize.width(), 20);
+            QString displayName = QFileInfo(fileName).fileName();
+            painter.drawText(textRect,
+                             Qt::AlignCenter | Qt::TextElideMode::ElideRight,
+                             displayName);
         }
     }
 
     if (isLoading) {
         painter.setPen(Qt::white);
-        painter.drawText(10, 20, QString("加载中: %1/%2").arg(loadedCount).arg(totalCount));
+        painter.drawText(
+            10, 20, QString("加载中: %1/%2").arg(loadedCount).arg(totalCount));
     }
 
     // 计算最小高度
     int rows = (imageList.size() + itemsPerRow - 1) / itemsPerRow;
-    int minHeight = thumbnailSpacing + rows * (thumbnailSize.height() + thumbnailSpacing + 25);
+    int minHeight = thumbnailSpacing +
+                    rows * (thumbnailSize.height() + thumbnailSpacing + 25);
     setMinimumHeight(minHeight);
 }
 

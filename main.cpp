@@ -12,7 +12,7 @@ int main(int argc, char *argv[])
 
     // 设置应用程序信息
     app.setApplicationName("PictureView");
-    app.setApplicationVersion("1.3.8.1");
+    app.setApplicationVersion("1.4.0.0");
     app.setOrganizationName("berylok");
 
     // 创建翻译器
@@ -53,7 +53,9 @@ int main(int argc, char *argv[])
     }
 
     // 注册文件关联选项
-    QCommandLineOption registerOption("register", QCoreApplication::translate("main", "Register file associations"));
+    QCommandLineOption registerOption(
+        "register",
+        QCoreApplication::translate("main", "Register file associations"));
     parser.addOption(registerOption);
 
     parser.process(app);
@@ -92,10 +94,13 @@ int main(int argc, char *argv[])
                 window.switchToSingleView();
             }
         } else {
-            qWarning() << QCoreApplication::translate("main", "File does not exist:") << filePath;
-            QMessageBox::warning(nullptr,
-                                 QCoreApplication::translate("main", "Error"),
-                                 QCoreApplication::translate("main", "File does not exist:\n%1").arg(filePath));
+            qWarning() << QCoreApplication::translate("main",
+                                                      "File does not exist:")
+                       << filePath;
+            QMessageBox::warning(
+                nullptr, QCoreApplication::translate("main", "Error"),
+                QCoreApplication::translate("main", "File does not exist:\n%1")
+                                                                           .arg(filePath));
         }
     }
 

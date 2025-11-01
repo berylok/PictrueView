@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(PictureView VERSION 1.3.8.1 LANGUAGES CXX)
+project(PictureView VERSION 1.3.11.0 LANGUAGES CXX)
 
 # 设置C++标准
 set(CMAKE_CXX_STANDARD 17)
