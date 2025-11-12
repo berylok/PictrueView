@@ -139,7 +139,7 @@ void ImageWidget::showContextMenu(const QPoint &globalPos)
 
     QAction *windowshowAction3 = windowshowMenu->addAction(
         hasTransparentBackground() ? tr("黑色背景")
-                                   : tr("透明背景（需隐藏标题）"));
+                                   : tr("透明背景（需隐藏标题+设置后重开程序）"));
     connect(windowshowAction3, &QAction::triggered, this,
             &ImageWidget::toggleTransparentBackground);
 

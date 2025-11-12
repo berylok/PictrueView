@@ -1,33 +1,35 @@
+// thumbnailwidget.h
 #ifndef THUMBNAILWIDGET_H
 #define THUMBNAILWIDGET_H
 
+#include "qfuturewatcher.h"
 #include <QWidget>
 #include <QPixmap>
 #include <QDir>
-#include <QMap>
 #include <QStringList>
-#include <QTimer>
-#include <QThread>
+#include <QMap>
 #include <QMutex>
-#include <QFuture>
-#include <QtConcurrent>
-#include <QMenu>
-#include <QAction>
+
+class ImageWidget;  // 前向声明
 
 class ThumbnailWidget : public QWidget
 {
     Q_OBJECT
 
 public:
-    ThumbnailWidget(QWidget *parent = nullptr);
+    // 只有一个构造函数声明
+    ThumbnailWidget(ImageWidget *imageWidget = nullptr, QWidget *parent = nullptr);
     ~ThumbnailWidget();
 
     void setImageList(const QStringList &list, const QDir &dir);
     void setSelectedIndex(int index);
     int getSelectedIndex() const;
-    void stopLoading();
+    void ensureVisible(int index);
     void clearThumbnailCache();
+    static void clearThumbnailCacheForImage(const QString &imagePath);
+    void stopLoading();
 
+    // 信号
 signals:
     void thumbnailClicked(int index);
     void ensureRectVisible(const QRect &rect);
@@ -35,40 +37,33 @@ signals:
 
 protected:
     void paintEvent(QPaintEvent *event) override;
-    void mousePressEvent(QMouseEvent *event) override; // 只有声明，没有实现
+    void mousePressEvent(QMouseEvent *event) override;
     void mouseDoubleClickEvent(QMouseEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
 
-private slots:
-    void updateThumbnails();
-
 private:
+    bool isArchiveFile(const QString &fileName) const;
+    QPixmap createArchiveIcon() const;
+    QPixmap loadThumbnail(const QString &path);
+    void updateThumbnails();
     void selectThumbnailAtPosition(const QPoint &pos);
 
-    QPixmap loadThumbnail(const QString &path);
-
+    ImageWidget *imageWidget;
     QSize thumbnailSize;
     int thumbnailSpacing;
     QStringList imageList;
     QDir currentDir;
     int selectedIndex;
 
-    static QMap<QString, QPixmap> thumbnailCache;
-    static QMutex cacheMutex;
-
+    // 加载相关
     int loadedCount;
     int totalCount;
     QFutureWatcher<QPixmap> *futureWatcher;
     bool isLoading;
 
-public:
-    static void clearThumbnailCacheForImage(const QString &imagePath);
-    void ensureVisible(int index);
-
-private:
-    bool isArchiveFile(const QString &fileName) const;
-    QPixmap createArchiveIcon() const;
-
+    // 静态缓存
+    static QMap<QString, QPixmap> thumbnailCache;
+    static QMutex cacheMutex;
 };
 
 #endif // THUMBNAILWIDGET_H

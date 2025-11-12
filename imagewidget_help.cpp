@@ -3,7 +3,7 @@
 #include <QMessageBox>
 #include <QApplication>
 #include <QFile>
-#include <windows.h>
+
 #include <QVBoxLayout>
 #include <QLabel>
 #include <QTextEdit>
@@ -12,6 +12,15 @@
 #include <QScrollArea>
 #include <QTabWidget>
 #include <QDialog>
+
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#endif
 
 QString ImageWidget::getShortPathName(const QString &longPath)
 {

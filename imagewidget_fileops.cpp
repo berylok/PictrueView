@@ -1,19 +1,47 @@
 // imagewidget_fileops.cpp
 #include "imagewidget.h"
+#include "qimagereader.h"
 #include <QFileInfo>
 #include <QMessageBox>
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QMimeData>
 #include <QUrl>
+#include <platform_compat.h>
+
+#ifdef _WIN32
 #include <shellapi.h>
+#else
+#include <QDesktopServices>
+#include <QUrl>
+#include <QProcess>
+#include <QDir>
+#include <QFileInfo>
+#endif
+
+
+bool ImageWidget::moveFileToRecycleBin(const QString &filePath)
+{
+    return PlatformCompat::moveToRecycleBin(filePath);
+}
 
 bool ImageWidget::loadImage(const QString &filePath, bool fromCache)
 {
     qDebug() << "=== loadImage 开始 ===";
     qDebug() << "文件路径:" << filePath;
-    qDebug() << "fromCache:" << fromCache;
-    qDebug() << "isArchiveMode:" << isArchiveMode;
+
+    // 设置更高的内存分配限制（512MB）
+    QImageReader::setAllocationLimit(512);
+    qDebug() << "设置内存分配限制为 512MB";
+
+    // 检查文件是否存在
+    QFileInfo fileInfo(filePath);
+    if (!fileInfo.exists()) {
+        qDebug() << "错误: 文件不存在";
+        return false;
+    }
+
+    qDebug() << "文件大小:" << fileInfo.size() << "字节";
 
     // 检查是否是压缩包
     if (ArchiveHandler::isSupportedArchive(filePath)) {
@@ -27,7 +55,7 @@ bool ImageWidget::loadImage(const QString &filePath, bool fromCache)
         return loadImageFromArchive(filePath);
     }
 
-    QFileInfo fileInfo(filePath);
+    //QFileInfo fileInfo(filePath);
     qDebug() << "文件是否存在:" << fileInfo.exists();
     qDebug() << "文件大小:" << fileInfo.size();
     qDebug() << "文件权限:" << fileInfo.permissions();
@@ -433,23 +461,7 @@ void ImageWidget::deleteSelectedThumbnail()
     }
 }
 
-bool ImageWidget::moveFileToRecycleBin(const QString &filePath)
-{
-    // Windows API 方式移动到回收站
-    WCHAR wcPath[MAX_PATH];
-    memset(wcPath, 0, sizeof(wcPath));
-    filePath.toWCharArray(wcPath);
-    wcPath[filePath.length()] = '\0'; // 确保以 null 结尾
 
-    SHFILEOPSTRUCT fileOp;
-    ZeroMemory(&fileOp, sizeof(fileOp));
-    fileOp.wFunc = FO_DELETE;
-    fileOp.pFrom = wcPath;
-    fileOp.fFlags = FOF_ALLOWUNDO | FOF_NOERRORUI | FOF_SILENT | FOF_NOCONFIRMATION;
-
-    int result = SHFileOperation(&fileOp);
-    return (result == 0);
-}
 
 void ImageWidget::permanentlyDeleteCurrentImage()
 {

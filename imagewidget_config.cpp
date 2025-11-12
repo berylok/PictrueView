@@ -138,16 +138,24 @@ void ImageWidget::toggleTransparentBackground()
     bool currentState = testAttribute(Qt::WA_TranslucentBackground);
 
     if (currentState) {
+        // 关闭透明背景
         setAttribute(Qt::WA_TranslucentBackground, false);
         setAutoFillBackground(true);
+        setStyleSheet(""); // 清除透明样式
         qDebug("透明背景 关闭");
     } else {
+        // 开启透明背景
         setAttribute(Qt::WA_TranslucentBackground, true);
         setAutoFillBackground(false);
+        setStyleSheet("background: transparent;"); // 设置透明样式
         qDebug("透明背景 开启");
     }
 
+    // 强制重绘
     update();
+    repaint();
+
+    // 保存配置
     saveConfiguration();
 }
 

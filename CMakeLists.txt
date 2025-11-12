@@ -1,29 +1,47 @@
 cmake_minimum_required(VERSION 3.16)
-project(PictureView VERSION 1.3.11.0 LANGUAGES CXX)
+project(PictureView VERSION 1.4.0 LANGUAGES CXX)
 
-# 设置C++标准
+# 设置 C++ 标准
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# 查找Qt6库 - 添加 LinguistTools
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Concurrent LinguistTools)
+# 查找 Qt6 包
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Concurrent)
 
-# 设置自动处理
-set(CMAKE_AUTOMOC ON)
-set(CMAKE_AUTORCC ON)
-set(CMAKE_AUTOUIC ON)
+# 启用 Qt 的自动处理
+qt_standard_project_setup()
+
+# 查找 libarchive
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(LIBARCHIVE REQUIRED libarchive)
 
 # 设置源文件
 set(SOURCES
     main.cpp
+    archivehandler.cpp
     canvascontrolpanel.cpp
     configmanager.cpp
-    imagewidget.cpp
+    imagewidget_archive.cpp
+    imagewidget_canvas.cpp
+    imagewidget_config.cpp
+    imagewidget_core.cpp
+    imagewidget_file.cpp
+    imagewidget_fileops.cpp
+    imagewidget_help.cpp
+    imagewidget_keyboard.cpp
+    imagewidget_menu.cpp
+    imagewidget_mouse.cpp
+    imagewidget_shortcuts.cpp
+    imagewidget_slideshow.cpp
+    imagewidget_transform.cpp
+    imagewidget_view.cpp
+    imagewidget_viewmode.cpp
     thumbnailwidget.cpp
 )
 
 # 设置头文件
 set(HEADERS
+    archivehandler.h
     canvascontrolpanel.h
     configmanager.h
     imagewidget.h
@@ -31,124 +49,106 @@ set(HEADERS
 )
 
 # 创建可执行文件
-add_executable(PictureView ${SOURCES} ${HEADERS})
-
-# 设置资源文件
-set(RESOURCE_FILES app.qrc)
-
-# 添加资源
-qt_add_resources(PictureView "app_resources"
-    PREFIX "/"
-    FILES ${RESOURCE_FILES}
+qt_add_executable(PictureView
+    ${SOURCES}
+    ${HEADERS}
+    platform_compat.h
 )
 
-# 链接Qt6库
-target_link_libraries(PictureView
+# 设置资源前缀（必须在 qt_add_resources 之前）
+set_target_properties(PictureView PROPERTIES
+    QT_RESOURCE_PREFIX "/"
+)
+
+# 添加资源文件 - 指定 PREFIX
+qt_add_resources(PictureView "app_resources"
+    PREFIX "/"
+    FILES "app.qrc"
+)
+
+# 链接库
+target_link_libraries(PictureView PRIVATE
     Qt6::Core
     Qt6::Gui
     Qt6::Widgets
     Qt6::Concurrent
+    ${LIBARCHIVE_LIBRARIES}
 )
 
 # 包含目录
-target_include_directories(PictureView PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-
-# 设置应用程序图标
-if(WIN32)
-    set(APP_ICON "${CMAKE_CURRENT_SOURCE_DIR}/icons/PictureView.ico")
-
-    if(EXISTS "${APP_ICON}")
-        message(STATUS "Setting application icon: ${APP_ICON}")
-
-        # 创建RC文件设置图标
-        set(RC_FILE "${CMAKE_CURRENT_BINARY_DIR}/app.rc")
-        file(WRITE ${RC_FILE} "IDI_ICON1 ICON DISCARDABLE \"${APP_ICON}\"")
-        target_sources(PictureView PRIVATE ${RC_FILE})
-    else()
-        message(WARNING "Icon file not found: ${APP_ICON}")
-    endif()
-endif()
-
-# 设置Windows可执行文件属性
-if(WIN32)
-    set_target_properties(PictureView PROPERTIES
-        WIN32_EXECUTABLE TRUE
-    )
-endif()
-
-# 添加翻译文件支持
-set(TS_FILES
-    #translations/PictureView_zh_CN.ts
-    translations/PictureView_en_US.ts
+target_include_directories(PictureView PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${LIBARCHIVE_INCLUDE_DIRS}
 )
 
-# 检查翻译文件是否存在并添加
-foreach(TS_FILE ${TS_FILES})
-    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${TS_FILE}")
-        list(APPEND EXISTING_TS_FILES "${CMAKE_CURRENT_SOURCE_DIR}/${TS_FILE}")
-    else()
-        message(WARNING "Translation file not found: ${TS_FILE}")
+# 翻译文件设置（可选，可暂时注释）
+# set(TS_FILES
+#     # translations/PictureView_zh_CN.ts
+#     translations/PictureView_en_US.ts
+# )
+#
+# # 添加翻译目标
+# qt_add_translation(QM_FILES ${TS_FILES})
+# add_custom_target(translations ALL DEPENDS ${QM_FILES})
+
+# 设置应用程序属性
+set_target_properties(PictureView PROPERTIES
+    OUTPUT_NAME "PictureView"
+    MACOSX_BUNDLE_BUNDLE_NAME "PictureView"
+    MACOSX_BUNDLE_COPYRIGHT "Copyright @ 2025 berylok"
+    MACOSX_BUNDLE_GUI_IDENTIFIER "com.berylok.PictureView"
+    MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
+    MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}"
+    WIN32_EXECUTABLE TRUE
+)
+
+# Linux 特定设置
+if(UNIX AND NOT APPLE)
+    # 设置图标
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/icons/PictureView.ico")
+        set_target_properties(PictureView PROPERTIES
+            MACOSX_BUNDLE_ICON_FILE PictureView.png
+        )
     endif()
-endforeach()
 
-if(EXISTING_TS_FILES)
-    # 使用 Qt6 的翻译功能
-    qt6_add_translation(QM_FILES ${EXISTING_TS_FILES})
-
-    # 将 QM 文件添加到资源中，确保程序可以访问它们
-    qt_add_resources(PictureView "translation_resources"
-        PREFIX "/translations"
-        BASE ${CMAKE_CURRENT_BINARY_DIR}
-        FILES ${QM_FILES}
+    # 安装配置
+    install(TARGETS PictureView
+        RUNTIME DESTINATION bin
     )
+
+    # 安装桌面文件
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/PictureView.desktop")
+        install(FILES PictureView.desktop
+            DESTINATION share/applications
+        )
+    endif()
+
+    # 安装图标
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/icons/PictureView.ico")
+        install(FILES icons/PictureView.png
+            DESTINATION share/icons/hicolor/256x256/apps
+            RENAME PictureView.png
+        )
+    endif()
 endif()
 
-# # 编译器优化设置
-# if(CMAKE_BUILD_TYPE STREQUAL "Release")
-#     target_compile_options(PictureView PRIVATE
-#         $<$<CXX_COMPILER_ID:MSVC>:
-#             /O2
-#         >
-#         $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>>:
-#             -O2
-#             -msse2
-#         >
-#     )
+# Windows 特定设置（保留以备将来使用）
+if(WIN32)
+    # 设置图标
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/icons/PictureView.ico")
+        set_target_properties(PictureView PROPERTIES
+            RC_ICONS "${CMAKE_CURRENT_SOURCE_DIR}/icons/PictureView.ico"
+        )
+    endif()
+endif()
 
-#     # 为GCC/Clang移除可能产生问题的优化
-#     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-#         target_compile_options(PictureView PRIVATE
-#             -fno-fast-math
-#         )
-#     endif()
-# elseif(CMAKE_BUILD_TYPE STREQUAL "Debug")
-#     target_compile_options(PictureView PRIVATE
-#         $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>>:
-#             -O1
-#             -g
-#         >
-#         $<$<CXX_COMPILER_ID:MSVC>:
-#             /Od
-#             /Zi
-#         >
-#     )
-# endif()
+# 编译特性设置
+target_compile_definitions(PictureView PRIVATE
+    $<$<CONFIG:Debug>:QT_QML_DEBUG>
+)
 
-# 设置版本和公司信息
+# 设置版本信息
 set_target_properties(PictureView PROPERTIES
     VERSION ${PROJECT_VERSION}
     SOVERSION ${PROJECT_VERSION_MAJOR}
 )
-
-# 可选：安装目标
-install(TARGETS PictureView
-    RUNTIME DESTINATION bin
-    BUNDLE DESTINATION .
-)
-
-# 安装翻译文件
-if(QM_FILES)
-    install(FILES ${QM_FILES}
-        DESTINATION ${CMAKE_INSTALL_DATADIR}/translations
-    )
-endif()

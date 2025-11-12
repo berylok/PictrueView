@@ -37,8 +37,13 @@ ImageWidget::ImageWidget(QWidget *parent) : QWidget(parent),
     isVerticallyFlipped(false),
     isArchiveMode(false)
 {
-    // 创建缩略图部件
-    thumbnailWidget = new ThumbnailWidget(this);
+
+    // 创建缩略图部件 - 使用统一的构造函数
+    thumbnailWidget = new ThumbnailWidget(this, this);  // imageWidget, parent
+    // // 创建缩略图部件
+    // thumbnailWidget = new ThumbnailWidget(this);
+
+    // thumbnailWidget = new ThumbnailWidget(nullptr, this);  // 如果构造函数需要两个参数    // 设置 ImageWidget 指针
 
     // 创建配置管理器
     configManager = new ConfigManager("image_viewer_config.ini");

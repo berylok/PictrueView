@@ -1,4 +1,4 @@
-#include "ConfigManager.h"
+#include "configmanager.h"
 #include <QSettings>
 #include <QApplication>
 #include <QDir>

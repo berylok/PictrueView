@@ -2,7 +2,14 @@
 #include "imagewidget.h"
 #include <QScreen>
 #include <QGuiApplication>
+#ifdef _WIN32
 #include <windows.h>
+#else
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#endif
 
 void ImageWidget::createControlPanel()
 {

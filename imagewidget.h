@@ -12,7 +12,7 @@
 #include <QtConcurrent>
 #include <QMutex>
 
-#include "ConfigManager.h"  // 添加配置管理器头文件
+#include "configmanager.h"  // 添加配置管理器头文件
 #include "canvascontrolpanel.h"  // 添加控制面板头文件
 
 #include "archivehandler.h"
@@ -288,6 +288,10 @@ private:
     int previousImageIndex;
     ViewMode previousViewMode;
     void openSelectedImage();
+
+
+    QPixmap createDefaultArchiveThumbnail();  // 添加这行
+
 };
 
 #endif // IMAGEWIDGET_H
