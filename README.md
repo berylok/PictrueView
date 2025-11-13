@@ -9,8 +9,8 @@ PictureView 是由C++代码的QT6开发框架+第三方库OpenCV图像解码 运
 其他：Cmake已更新至1.4 for ubuntu(linux) 2025年11月12日.16时16分
 
 QT6内置图像解码
-libarchive（功能：解压缩包库）
-未来可能会加OpenCV（功能：图像解码器）
+libarchive（仅读取。）
+未来可能会加OpenCV（图像解码）
 
 v1.4.0.0支持ZIP压缩包(+libarchive)
 v1.3.8.1补齐一些功能及修复
