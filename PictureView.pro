@@ -1,20 +1,18 @@
 QT += core gui widgets concurrent
-greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
-CONFIG += c++11
+CONFIG += c++17
 
-# 添加 libarchive 库
-# 根据你的 vcpkg 安装路径调整
-VCPKG_ROOT = $$(VCPKG_ROOT)
-isEmpty(VCPKG_ROOT) {
-    VCPKG_ROOT = j:/vcpkg  # 修改为你的 vcpkg 路径
+# 在 Ubuntu 上使用系统安装的 libarchive
+unix:!macx {
+    CONFIG += link_pkgconfig
+    PKGCONFIG += libarchive
 }
 
-INCLUDEPATH += $$VCPKG_ROOT/installed/x64-windows/include
-LIBS += -L$$VCPKG_ROOT/installed/x64-windows/lib -larchive
-
-# 如果是 Linux/macOS，使用：
-# INCLUDEPATH += $$VCPKG_ROOT/installed/x64-linux/include
-# LIBS += -L$$VCPKG_ROOT/installed/x64-linux/lib -larchive
+# Windows 或其他情况
+win32 {
+    LIBS += -larchive
+    INCLUDEPATH += "J:\vcpkg\installed\x64-windows\include"  # 修改为实际路径
+    LIBS += -L"J:\vcpkg\installed\x64-windows\lib"
+}
 
 SOURCES += main.cpp \
     archivehandler.cpp \
@@ -56,7 +54,22 @@ TRANSLATIONS += \
 # 设置默认语言
 DEFAULT_LANG = zh_CN
 
-# .pro 文件 - 设置应用程序图标（必须用 ICO）
+# Linux 图标配置
+linux {
+    # 应用程序图标
+    QMAKE_TARGET_ICON = icons/PictureView.png
+
+    # 安装目标
+    target.path = /usr/bin
+    desktop.files = PictureView.desktop
+    desktop.path = /usr/share/applications/
+    icons.path = /usr/share/icons/hicolor/256x256/apps/
+    icons.files = icons/PictureView.png
+
+    INSTALLS += target desktop icons
+}
+
+
 RC_ICONS = icons/PictureView.ico
 
 # 基本应用信息

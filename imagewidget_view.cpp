@@ -178,10 +178,19 @@ void ImageWidget::wheelEvent(QWheelEvent *event)
     }
 }
 
+
 void ImageWidget::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
+
     if (currentViewMode == ThumbnailView) {
         thumbnailWidget->update();
+    } else if (currentViewMode == SingleView) {
+        // 单图模式下，如果当前是适应窗口模式，则重新调整图片尺寸
+        if (currentViewStateType == FitToWindow && !pixmap.isNull()) {
+            fitToWindow();
+        }
+        // 或者调用新的调整函数
+        // adjustImageSize();
     }
 }

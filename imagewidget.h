@@ -292,6 +292,11 @@ private:
 
     QPixmap createDefaultArchiveThumbnail();  // 添加这行
 
+private:
+    QImage loadImageSafely(const QString &filePath);
+    void increaseImageMemoryLimit();
+    void checkImageFormatSupport();
+
 };
 
 #endif // IMAGEWIDGET_H
